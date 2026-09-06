@@ -563,7 +563,11 @@ try{
 function signInWithGoogle(){
   if (!auth) return;
   const provider = new firebase.auth.GoogleAuthProvider();
-  auth.signInWithPopup(provider).catch(e => console.error(e));
+  auth.signInWithPopup(provider).catch(e => {
+    console.error(e);
+    window.__fbAuthError = (e && e.message) ? e.message : String(e);
+    render();
+  });
 }
 function signOutUser(){
   if (!auth) return;
@@ -1009,6 +1013,12 @@ function renderProgress(){
       btn.textContent = 'Увійти через Google';
       btn.onclick = signInWithGoogle;
       wrap.appendChild(btn);
+      if (window.__fbAuthError){
+        const err = document.createElement('div');
+        err.className = 'account-row';
+        err.innerHTML = `<div class="email" style="color:var(--rust)">Помилка входу: ${escapeHtml(window.__fbAuthError)}</div>`;
+        wrap.appendChild(err);
+      }
     }
   } else if (typeof firebase !== 'undefined' && firebaseConfig.apiKey !== "ТВІЙ_apiKey"){
     const err = document.createElement('div');
