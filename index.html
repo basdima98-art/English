@@ -534,6 +534,29 @@
     padding:14px;
     font-size:15px;
   }
+  .ref-row{
+    background:var(--ink-2);
+    border:1px solid var(--line);
+    border-radius:var(--radius-ui);
+    padding:14px 16px;
+    margin-bottom:8px;
+  }
+  .ref-row .head{ display:flex; justify-content:space-between; font-weight:600; font-family:'IBM Plex Serif',serif; font-size:15.5px; }
+  .ref-row .meta{ color:var(--slate); font-size:13px; margin-top:4px; }
+  .ref-row .ex{ color:var(--slate); font-size:13px; margin-top:4px; font-style:italic; }
+  .range-row{ display:flex; align-items:center; gap:10px; margin:6px 0 4px; }
+  .range-row input[type=range]{ flex:1; }
+  .range-value{ font-family:'IBM Plex Serif',serif; font-weight:600; min-width:64px; text-align:right; }
+  .search-input{
+    width:100%;
+    background:var(--paper);
+    color:var(--dark-text);
+    border:none;
+    border-radius:var(--radius-ui);
+    padding:13px 14px;
+    font-size:15px;
+    margin-bottom:12px;
+  }
 </style>
 </head>
 <body>
@@ -563,7 +586,7 @@ try{
 function signInWithGoogle(){
   if (!auth) return;
   const provider = new firebase.auth.GoogleAuthProvider();
-  auth.signInWithPopup(provider).catch(e => {
+  auth.signInWithRedirect(provider).catch(e => {
     console.error(e);
     window.__fbAuthError = (e && e.message) ? e.message : String(e);
     render();
@@ -572,6 +595,191 @@ function signInWithGoogle(){
 function signOutUser(){
   if (!auth) return;
   auth.signOut();
+}
+
+const LEVELS = ["A1","A2","B1","B2","C1","C2"];
+
+// ==== IRREGULAR VERBS (ordered roughly by frequency) ====
+const IRREGULAR_VERBS_RAW = [
+["be","was/were","been","бути"],["have","had","had","мати"],["do","did","done","робити"],
+["say","said","said","сказати"],["go","went","gone","йти"],["get","got","got/gotten","отримувати"],
+["make","made","made","робити/створювати"],["know","knew","known","знати"],["think","thought","thought","думати"],
+["take","took","taken","брати"],["see","saw","seen","бачити"],["come","came","come","приходити"],
+["give","gave","given","давати"],["find","found","found","знаходити"],["tell","told","told","розповідати"],
+["become","became","become","ставати"],["leave","left","left","залишати/йти"],["feel","felt","felt","відчувати"],
+["put","put","put","класти"],["mean","meant","meant","означати"],["keep","kept","kept","тримати"],
+["let","let","let","дозволяти"],["begin","began","begun","починати"],["show","showed","shown","показувати"],
+["hear","heard","heard","чути"],["run","ran","run","бігти"],["bring","brought","brought","приносити"],
+["write","wrote","written","писати"],["sit","sat","sat","сидіти"],["stand","stood","stood","стояти"],
+["lose","lost","lost","втрачати"],["pay","paid","paid","платити"],["meet","met","met","зустрічати"],
+["set","set","set","встановлювати"],["lead","led","led","вести"],["understand","understood","understood","розуміти"],
+["speak","spoke","spoken","говорити"],["read","read","read","читати"],["grow","grew","grown","рости"],
+["win","won","won","перемагати"],["buy","bought","bought","купувати"],["send","sent","sent","надсилати"],
+["build","built","built","будувати"],["fall","fell","fallen","падати"],["cut","cut","cut","різати"],
+["sell","sold","sold","продавати"],["break","broke","broken","ламати"],["drive","drove","driven","керувати (авто)"],
+["hit","hit","hit","вдаряти"],["choose","chose","chosen","обирати"],["wear","wore","worn","носити (одяг)"],
+["catch","caught","caught","ловити"],["teach","taught","taught","навчати"],["wake","woke","woken","прокидатися"],
+["throw","threw","thrown","кидати"],["lay","laid","laid","класти"],["sleep","slept","slept","спати"],
+["bear","bore","born(e)","народжувати/нести"],["hang","hung","hung","вішати"],["ride","rode","ridden","їхати верхи/на транспорті"],
+["shake","shook","shaken","трясти"],["shine","shone","shone","сяяти"],["shoot","shot","shot","стріляти"],
+["shrink","shrank","shrunk","зменшуватись"],["sing","sang","sung","співати"],["sink","sank","sunk","тонути"],
+["swim","swam","swum","плавати"],["spring","sprang","sprung","стрибати"],["steal","stole","stolen","красти"],
+["stick","stuck","stuck","приклеювати/застрягати"],["sting","stung","stung","жалити"],["stink","stank","stunk","смердіти"],
+["strike","struck","struck","вдаряти/бастувати"],["swear","swore","sworn","клястися"],["sweep","swept","swept","підмітати"],
+["swing","swung","swung","гойдати"],["tear","tore","torn","рвати"],["blow","blew","blown","дути"],
+["burst","burst","burst","лопатися"],["cast","cast","cast","кидати (роль)"],["cost","cost","cost","коштувати"],
+["creep","crept","crept","повзти"],["deal","dealt","dealt","мати справу"],["dig","dug","dug","копати"],
+["draw","drew","drawn","малювати/тягнути"],["dream","dreamt/dreamed","dreamt/dreamed","мріяти"],["drink","drank","drunk","пити"],
+["eat","ate","eaten","їсти"],["feed","fed","fed","годувати"],["fight","fought","fought","боротися"],
+["fit","fit","fit","підходити за розміром"],["flee","fled","fled","тікати"],["fly","flew","flown","літати"],
+["forbid","forbade","forbidden","забороняти"],["forget","forgot","forgotten","забувати"],["forgive","forgave","forgiven","пробачати"],
+["freeze","froze","frozen","замерзати"],["hide","hid","hidden","ховати"],["hold","held","held","тримати"],
+["hurt","hurt","hurt","боліти/шкодити"],["kneel","knelt","knelt","ставати на коліна"],["knit","knit","knit","в'язати"],
+["leap","leapt","leapt","стрибати"],["lend","lent","lent","позичати"],["lie","lay","lain","лежати"],
+["light","lit","lit","запалювати"],["mistake","mistook","mistaken","помилятися"],["mow","mowed","mown","косити"],
+["overcome","overcame","overcome","долати"],["prove","proved","proven","доводити"],["quit","quit","quit","кидати/залишати"],
+["rid","rid","rid","позбавляти"],["ring","rang","rung","дзвонити"],["rise","rose","risen","підійматися"],
+["saw","sawed","sawn","пиляти"],["seek","sought","sought","шукати"],["sew","sewed","sewn","шити"],
+["shed","shed","shed","скидати (листя, кров)"],["shut","shut","shut","зачиняти"],["slide","slid","slid","ковзати"],
+["sow","sowed","sown","сіяти"],["spell","spelt/spelled","spelt/spelled","писати по буквах"],["spend","spent","spent","витрачати"],
+["spill","spilt/spilled","spilt/spilled","розливати"],["spin","spun","spun","крутити"],["spit","spat","spat","плювати"],
+["split","split","split","розділяти"],["spoil","spoilt/spoiled","spoilt/spoiled","псувати"],["spread","spread","spread","поширювати"],
+["strive","strove","striven","прагнути"],["tread","trod","trodden","ступати"],["undergo","undergone","undergone","зазнавати"],
+["undertake","undertook","undertaken","братися за"],["upset","upset","upset","засмучувати"],["weave","wove","woven","ткати"],
+["weep","wept","wept","плакати"],["wet","wet","wet","мочити"],["wind","wound","wound","заводити (годинник)"],
+["withdraw","withdrew","withdrawn","забирати/знімати"],["wring","wrung","wrung","викручувати"],["bind","bound","bound","зв'язувати"],
+["bite","bit","bitten","кусати"],["bleed","bled","bled","кровоточити"],["broadcast","broadcast","broadcast","транслювати"],
+["burn","burnt/burned","burnt/burned","палити"],["dive","dove/dived","dived","пірнати"],["dwell","dwelt","dwelt","мешкати"],
+["grind","ground","ground","молоти"],["lean","leant/leaned","leant/leaned","нахилятися"],["overtake","overtook","overtaken","обганяти"],
+["partake","partook","partaken","брати участь"],["plead","pled/pleaded","pled/pleaded","благати"],["rebuild","rebuilt","rebuilt","перебудовувати"],
+["redo","redid","redone","переробляти"],["rethink","rethought","rethought","переосмислювати"],["rewrite","rewrote","rewritten","переписувати"],
+["slay","slew","slain","вбивати (архаїчно)"],["slink","slunk","slunk","крастися"],["slit","slit","slit","розрізати"],
+["smell","smelt/smelled","smelt/smelled","пахнути"],["sneak","snuck/sneaked","snuck/sneaked","прокрадатися"],["speed","sped/speeded","sped/speeded","прискорюватися"],
+["string","strung","strung","нанизувати"],["swell","swelled","swollen","набрякати"],["thrust","thrust","thrust","штовхати"],
+["wed","wed/wedded","wed/wedded","одружуватись"],["withhold","withheld","withheld","утримувати (інформацію)"]
+];
+const IRREGULAR_VERBS = IRREGULAR_VERBS_RAW.map((v,i) => ({ id:'v'+i, rank:i+1, base:v[0], past:v[1], participle:v[2], translation:v[3] }));
+
+// ==== GRAMMAR REFERENCE SECTIONS ====
+const MODAL_VERBS = [
+  { verb:"can", meaning:"вміння, можливість (теперішній час)", example:"She can swim very well." },
+  { verb:"could", meaning:"вміння в минулому; ввічливе прохання", example:"Could you help me, please?" },
+  { verb:"must", meaning:"обов'язок, сильна впевненість", example:"You must wear a seatbelt." },
+  { verb:"have to", meaning:"обов'язок ззовні (правила, обставини)", example:"I have to work on Saturday." },
+  { verb:"should", meaning:"порада, рекомендація", example:"You should see a doctor." },
+  { verb:"may", meaning:"дозвіл, можливість (формально)", example:"May I come in?" },
+  { verb:"might", meaning:"слабша можливість, ніж may", example:"It might rain later." },
+  { verb:"will", meaning:"майбутнє, обіцянка, рішення в момент мовлення", example:"I will call you tomorrow." },
+  { verb:"would", meaning:"ввічливе прохання, гіпотетична дія", example:"Would you like some tea?" },
+  { verb:"shall", meaning:"пропозиція (формально, переважно з I/we)", example:"Shall we go now?" },
+];
+const ARTICLES_RULES = [
+  { rule:"a / an — невизначений артикль", note:"вживається перед злічуваним іменником в однині, коли говоримо про щось вперше або неконкретне", example:"I saw a dog in the park." },
+  { rule:"an перед голосним звуком", note:"важливий саме звук, а не буква", example:"an hour, a university" },
+  { rule:"the — визначений артикль", note:"коли співрозмовник розуміє, про що саме йдеться (вже згадувалось, унікальне, єдине в своєму роді)", example:"The sun is bright today." },
+  { rule:"без артикля", note:"з незлічуваними іменниками в загальному сенсі, множиною в загальному сенсі, назвами країн (здебільшого), мовами", example:"I like music. Cats are independent." },
+  { rule:"винятки з the", note:"назви річок, морів, груп островів, готелів, газет мають the: the Amazon, the Netherlands, the Times", example:"the United Kingdom, the Pacific Ocean" },
+];
+const PREPOSITIONS = [
+  { prep:"at", usage:"точний час, точка", example:"at 5 o'clock, at the door" },
+  { prep:"on", usage:"дні, дати, поверхні", example:"on Monday, on the table" },
+  { prep:"in", usage:"місяці, роки, простір/приміщення", example:"in July, in the room" },
+  { prep:"to", usage:"напрямок руху", example:"go to school" },
+  { prep:"into", usage:"рух всередину чогось", example:"walk into the room" },
+  { prep:"at (місце)", usage:"конкретна точка/адреса", example:"at the bus stop" },
+  { prep:"in (місце)", usage:"всередині обмеженого простору", example:"in the box, in London" },
+  { prep:"on (місце)", usage:"на поверхні", example:"on the wall, on the floor" },
+];
+const TENSES_CHEATSHEET = [
+  { name:"Present Simple", formula:"do/does + V1", signals:"always, usually, every day", example:"She works every day." },
+  { name:"Present Continuous", formula:"am/is/are + V-ing", signals:"now, at the moment", example:"She is working now." },
+  { name:"Present Perfect", formula:"have/has + V3", signals:"already, yet, just, since, for", example:"She has already finished." },
+  { name:"Present Perfect Continuous", formula:"have/has been + V-ing", signals:"for, since, how long", example:"She has been working for 2 hours." },
+  { name:"Past Simple", formula:"V2", signals:"yesterday, last week, ago", example:"She worked yesterday." },
+  { name:"Past Continuous", formula:"was/were + V-ing", signals:"while, when (тривала дія в минулому)", example:"She was working when I called." },
+  { name:"Past Perfect", formula:"had + V3", signals:"before, after, by the time", example:"She had finished before I arrived." },
+  { name:"Past Perfect Continuous", formula:"had been + V-ing", signals:"for, since (до моменту в минулому)", example:"She had been working for 2 hours before I came." },
+  { name:"Future Simple", formula:"will + V1", signals:"tomorrow, next week", example:"She will work tomorrow." },
+  { name:"Future Continuous", formula:"will be + V-ing", signals:"at this time tomorrow", example:"She will be working at 5pm." },
+  { name:"Future Perfect", formula:"will have + V3", signals:"by the time, by next year", example:"She will have finished by 5pm." },
+  { name:"Future Perfect Continuous", formula:"will have been + V-ing", signals:"by then, for (до моменту в майбутньому)", example:"She will have been working for 3 hours by 5pm." },
+];
+const CONDITIONALS = [
+  { type:"Zero Conditional", formula:"If + Present Simple, Present Simple", usage:"загальні факти, закономірності", example:"If you heat water, it boils." },
+  { type:"First Conditional", formula:"If + Present Simple, will + V1", usage:"реальна можливість у майбутньому", example:"If it rains, I will stay home." },
+  { type:"Second Conditional", formula:"If + Past Simple, would + V1", usage:"нереальна/малоймовірна ситуація в теперішньому", example:"If I won the lottery, I would travel." },
+  { type:"Third Conditional", formula:"If + Past Perfect, would have + V3", usage:"нереальна ситуація в минулому (жаль)", example:"If I had studied, I would have passed." },
+];
+const PHRASAL_VERBS = [
+  { verb:"give up", meaning:"здаватися, кидати", example:"Don't give up on your dreams.", category:"почуття" },
+  { verb:"look for", meaning:"шукати", example:"I'm looking for my keys.", category:"побут" },
+  { verb:"get along", meaning:"ладнати з кимось", example:"She gets along with everyone.", category:"стосунки" },
+  { verb:"work out", meaning:"тренуватися; спрацьовувати", example:"I work out every morning.", category:"здоров'я" },
+  { verb:"turn down", meaning:"відхиляти, зменшувати гучність", example:"He turned down the offer.", category:"робота" },
+  { verb:"put off", meaning:"відкладати", example:"Don't put off your homework.", category:"побут" },
+  { verb:"run out of", meaning:"закінчуватись (запаси)", example:"We ran out of milk.", category:"побут" },
+  { verb:"check in", meaning:"реєструватися (готель, аеропорт)", example:"We checked in at the hotel.", category:"подорожі" },
+  { verb:"figure out", meaning:"зрозуміти, розібратися", example:"I can't figure out this puzzle.", category:"навчання" },
+  { verb:"bring up", meaning:"виховувати; порушувати тему", example:"She brought up an interesting point.", category:"робота" },
+];
+
+const MODALS_QUIZ = [
+  { prompt:"Ти повинен носити ремінь безпеки в машині.", options:["must","might","would","could"], correct:"must", explanation:"Обов'язок/сильна необхідність — must." },
+  { prompt:"___ ви передати мені сіль, будь ласка? (ввічливе прохання)", options:["Must","Could","Shall","Do"], correct:"Could", explanation:"Ввічливе прохання типово виражають Could you...?" },
+  { prompt:"У дитинстві він ___ бігати дуже швидко.", options:["can","could","must","should"], correct:"could", explanation:"Вміння в минулому — could." },
+  { prompt:"Схоже, зараз піде дощ, але я не впевнений.", options:["must","might","have to","shall"], correct:"might", explanation:"Слабка ймовірність — might." },
+  { prompt:"Тобі варто більше спати — це просто порада.", options:["must","should","will","can"], correct:"should", explanation:"Порада — should." },
+  { prompt:"Я ___ закінчити цей звіт до п'ятниці (правило компанії).", options:["can","might","have to","would"], correct:"have to", explanation:"Обов'язок ззовні (правило) частіше виражають have to, а не must." },
+];
+const ARTICLES_QUIZ = [
+  { prompt:"I saw ___ dog in the park.", options:["a","an","the","—"], correct:"a", explanation:"Перша згадка, звичайний приголосний звук — a." },
+  { prompt:"She waited for ___ hour.", options:["a","an","the","—"], correct:"an", explanation:"Наступне слово починається з голосного звуку — an." },
+  { prompt:"___ sun rises in the east.", options:["A","An","The","—"], correct:"The", explanation:"Єдиний у своєму роді об'єкт — the." },
+  { prompt:"I love ___ music.", options:["a","an","the","—"], correct:"—", explanation:"Незлічуваний іменник у загальному сенсі — без артикля." },
+  { prompt:"We visited ___ Netherlands last year.", options:["a","an","the","—"], correct:"the", explanation:"Деякі назви країн вживаються з the (the Netherlands, the USA)." },
+  { prompt:"___ cats are independent animals.", options:["A","An","The","—"], correct:"—", explanation:"Множина в загальному сенсі — без артикля." },
+];
+const PREPS_QUIZ = [
+  { prompt:"I'll see you ___ 5 o'clock.", options:["at","on","in","to"], correct:"at", explanation:"Точний час — at." },
+  { prompt:"Her birthday is ___ Monday.", options:["at","on","in","to"], correct:"on", explanation:"Дні тижня — on." },
+  { prompt:"We're going ___ Spain next summer.", options:["at","on","in","to"], correct:"to", explanation:"Напрямок руху — to." },
+  { prompt:"He was born ___ 1990.", options:["at","on","in","to"], correct:"in", explanation:"Роки — in." },
+  { prompt:"The cat jumped ___ the box.", options:["into","at","on","to"], correct:"into", explanation:"Рух всередину — into." },
+  { prompt:"Wait for me ___ the bus stop.", options:["in","on","at","to"], correct:"at", explanation:"Конкретна точка — at." },
+];
+const TENSES_QUIZ = [
+  { prompt:"She ___ (work) every day.", options:["works","is working","has worked","worked"], correct:"works", explanation:"Every day — сигнал Present Simple." },
+  { prompt:"Look! She ___ (work) right now.", options:["works","is working","has worked","worked"], correct:"is working", explanation:"Right now — сигнал Present Continuous." },
+  { prompt:"She ___ (already/finish) the report.", options:["already finishes","is already finishing","has already finished","already finished"], correct:"has already finished", explanation:"Already — сигнал Present Perfect." },
+  { prompt:"She ___ (work) yesterday.", options:["works","was working","has worked","worked"], correct:"worked", explanation:"Yesterday — сигнал Past Simple." },
+  { prompt:"By 5pm tomorrow, she ___ (finish) the report.", options:["will finish","will have finished","finishes","finished"], correct:"will have finished", explanation:"By + момент у майбутньому — Future Perfect." },
+  { prompt:"She ___ (work) for two hours before I called.", options:["worked","had been working","has been working","was working"], correct:"had been working", explanation:"Тривала дія до моменту в минулому — Past Perfect Continuous." },
+];
+const CONDITIONALS_QUIZ = [
+  { prompt:"If you heat ice, it ___ (melt). (загальний факт)", options:["melts","will melt","would melt","would have melted"], correct:"melts", explanation:"Zero Conditional — загальні факти." },
+  { prompt:"If it rains tomorrow, I ___ (stay) home. (реальна можливість)", options:["stay","will stay","would stay","would have stayed"], correct:"will stay", explanation:"First Conditional — реальна можливість у майбутньому." },
+  { prompt:"If I ___ (win) the lottery, I would travel. (нереально зараз)", options:["win","won","had won","will win"], correct:"won", explanation:"Second Conditional — нереальна ситуація зараз." },
+  { prompt:"If I had studied, I ___ (pass) the exam. (жаль про минуле)", options:["would pass","pass","would have passed","passed"], correct:"would have passed", explanation:"Third Conditional — нереальна ситуація в минулому." },
+];
+const PHRASALS_QUIZ = [
+  { prompt:"Don't ___ on your dreams. (не здавайся)", options:["give up","look for","turn down","put off"], correct:"give up", explanation:"give up = здаватися." },
+  { prompt:"I'm ___ my keys. (шукаю)", options:["looking for","checking in","running out of","figuring out"], correct:"looking for", explanation:"look for = шукати." },
+  { prompt:"We ___ milk. (закінчилось молоко)", options:["ran out of","turned down","brought up","gave up"], correct:"ran out of", explanation:"run out of = закінчитись (про запаси)." },
+  { prompt:"He ___ the job offer. (відхилив)", options:["turned down","checked in","worked out","put off"], correct:"turned down", explanation:"turn down = відхиляти." },
+  { prompt:"Please don't ___ your homework. (відкладати)", options:["put off","get along","figure out","bring up"], correct:"put off", explanation:"put off = відкладати." },
+];
+
+const REFERENCE_SECTIONS = {
+  modals: { title:'Модальні дієслова', data:MODAL_VERBS, map:m=>({title:m.verb, meta:m.meaning, ex:m.example}), quiz:MODALS_QUIZ },
+  articles: { title:'Артиклі', data:ARTICLES_RULES, map:a=>({title:a.rule, meta:a.note, ex:a.example}), quiz:ARTICLES_QUIZ },
+  preps: { title:'Прийменники', data:PREPOSITIONS, map:p=>({title:p.prep, meta:p.usage, ex:p.example}), quiz:PREPS_QUIZ },
+  tenses: { title:'12 часових форм', data:TENSES_CHEATSHEET, map:t=>({title:t.name, meta:t.formula, ex:t.signals+' — '+t.example}), quiz:TENSES_QUIZ },
+  conditionals: { title:'Умовні речення', data:CONDITIONALS, map:c=>({title:c.type, meta:c.formula, ex:c.usage+' — '+c.example}), quiz:CONDITIONALS_QUIZ },
+  phrasals: { title:'Фразові дієслова', data:PHRASAL_VERBS, map:p=>({title:p.verb, meta:p.meaning+' ('+p.category+')', ex:p.example}), quiz:PHRASALS_QUIZ },
+};
+function nextLevelUp(level){
+  const idx = LEVELS.indexOf(level);
+  return LEVELS[Math.min(idx + 1, LEVELS.length - 1)];
 }
 
 const TENSE_OPTIONS = [
@@ -587,6 +795,7 @@ let state = {
   user: null,
   packs: [],
   coveredTenses: [],
+  level: 'A2',
   currentPackId: null,
   confirmDeletePack: false,
   sessionQueue: [],
@@ -601,6 +810,16 @@ let state = {
   chatMessages: [],
   chatInput: '',
   chatLoading: false,
+  activityLog: [],
+  verbProgress: {},
+  verbSearch: '',
+  verbRangeTo: 50,
+  verbTrainQueue: [],
+  verbTrainIndex: 0,
+  verbTrainFlipped: false,
+  grammarQuizState: null,
+  grammarQuizBack: null,
+  progressAnalysis: null,
 };
 
 function uid(){ return Math.random().toString(36).slice(2) + Date.now().toString(36); }
@@ -655,16 +874,26 @@ async function loadAllData(){
   const tenses = await storeGet('coveredTenses');
   const theme = await storeGet('theme');
   const chat = await storeGet('chatMessages');
+  const level = await storeGet('level');
+  const activityLog = await storeGet('activityLog');
+  const verbProgress = await storeGet('verbProgress');
   state.packs = (packs && packs.length) ? packs : (state.user ? [] : [seedDemoPack()]);
   if ((!packs || !packs.length) && !state.user) await storeSet('packs', state.packs);
   state.coveredTenses = tenses || ["Present Simple","Present Perfect"];
   state.theme = theme || 'dark';
+  state.level = level || 'A2';
   state.chatMessages = chat || [];
+  state.activityLog = activityLog || [];
+  state.verbProgress = verbProgress || {};
   document.body.setAttribute('data-theme', state.theme);
 }
 
 async function init(){
   if (auth){
+    auth.getRedirectResult().catch(e => {
+      console.error('Redirect result error', e);
+      window.__fbAuthError = (e && e.message) ? e.message : String(e);
+    });
     auth.onAuthStateChanged(async (user) => {
       state.user = user;
       await loadAllData();
@@ -705,10 +934,10 @@ async function callClaudeAPI(body){
   }
 }
 
-async function askClaude(userPrompt, systemPrompt){
+async function askClaude(userPrompt, systemPrompt, maxTokens){
   const body = {
-    model: "claude-sonnet-4-6",
-    max_tokens: 1000,
+    model: "claude-haiku-4-5-20251001",
+    max_tokens: maxTokens || 1000,
     messages: [{ role: "user", content: userPrompt }]
   };
   if (systemPrompt) body.system = systemPrompt;
@@ -719,7 +948,7 @@ async function askClaude(userPrompt, systemPrompt){
 
 async function askClaudeConversation(messages, systemPrompt){
   const body = {
-    model: "claude-sonnet-4-6",
+    model: "claude-haiku-4-5-20251001",
     max_tokens: 1000,
     messages: messages.map(m => ({ role: m.role, content: m.content }))
   };
@@ -743,8 +972,8 @@ function goto(route, extra){
 // ---------- Card generation ----------
 async function generateCards(packNameOrTargetId, rawText, appendToExisting){
   const system = "Ти генеруєш навчальні картки англійської мови для україномовного користувача рівня A2-B1. Завжди повертай ЛИШЕ валідний JSON, без пояснень і без markdown-огорожі.";
-  const prompt = `Ось текст або список слів для вивчення:\n\n${rawText}\n\nСтвори JSON-масив об'єктів формату {"word":"...", "translation":"...", "example":"...", "transcription":"..."} для значущих слів чи фраз звідси (пропускай артиклі, займенники, прийменники, якщо це суцільний текст). "transcription" — якщо у вихідному тексті вже є транскрипція (IPA чи вимова кирилицею) — візьми її; якщо немає — згенеруй стандартну IPA-транскрипцію сам. "example" — просте речення англійською з цим словом. Максимум 20 об'єктів. Поверни лише масив.`;
-  const raw = await askClaude(prompt, system);
+  const prompt = `Ось текст або список слів для вивчення:\n\n${rawText}\n\nСтвори JSON-масив об'єктів формату {"word":"...", "translation":"...", "example":"...", "transcription":"..."} для ВСІХ значущих слів чи фраз звідси (пропускай артиклі, займенники, прийменники, якщо це суцільний текст). "transcription" — якщо у вихідному тексті вже є транскрипція (IPA чи вимова кирилицею) — візьми її; якщо немає — згенеруй стандартну IPA-транскрипцію сам. "example" — просте речення англійською з цим словом. Обробляй увесь наданий текст, не обмежуй кількість об'єктів. Поверни лише масив.`;
+  const raw = await askClaude(prompt, system, 4000);
   const items = parseJSONLoose(raw);
   const words = items.map(it => ({
     id: uid(),
@@ -778,8 +1007,18 @@ function speakText(text){
 
 function dueWords(pack){
   const now = Date.now();
-  const due = pack.words.filter(w => w.dueAt <= now).sort((a,b)=>a.box-b.box);
-  return due.length ? due : [...pack.words].sort((a,b)=>a.box-b.box);
+  const shuffled = [...pack.words].sort(() => Math.random() - 0.5);
+  const due = shuffled.filter(w => w.dueAt <= now).sort((a,b)=>a.box-b.box);
+  return due.length ? due : shuffled.sort((a,b)=>a.box-b.box);
+}
+
+async function logEvent(kind, correct, meta){
+  try{
+    const log = state.activityLog || (state.activityLog = []);
+    log.push({ ts: Date.now(), kind, correct: !!correct, meta: meta || '' });
+    if (log.length > 400) log.splice(0, log.length - 400);
+    await storeSet('activityLog', log);
+  }catch(e){ /* logging is best-effort */ }
 }
 
 function gradeCard(pack, word, easy){
@@ -789,6 +1028,7 @@ function gradeCard(pack, word, easy){
     word.box = 1;
   }
   word.dueAt = Date.now() + BOX_HOURS[word.box] * 3600 * 1000;
+  logEvent('word', easy, pack ? pack.name : '');
 }
 
 function reinsertForRetry(word){
@@ -810,7 +1050,7 @@ function render(){
   if (state.route === 'chat') main.style.paddingBottom = '150px';
   main.appendChild(renderScreen());
   app.appendChild(main);
-  if (['home','add','progress','chat'].includes(state.route)){
+  if (['home','add','progress','chat','reference'].includes(state.route)){
     app.appendChild(renderBottomNav());
   }
   if (state.route === 'chat'){
@@ -828,6 +1068,16 @@ function renderTopbar(){
     add: ['Додати слова', 'Встав текст або список слів'],
     progress: ['Прогрес', null],
     chat: ['Питання', 'Постав будь-яке питання про англійську'],
+    reference: ['Довідник', 'Граматика та матеріали для повторення'],
+    verbs: ['Неправильні дієслова', null],
+    verbtrain: ['Тренування дієслів', null],
+    modals: ['Модальні дієслова', null],
+    articles: ['Артиклі', null],
+    preps: ['Прийменники', null],
+    tenses: ['12 часових форм', null],
+    conditionals: ['Умовні речення', null],
+    phrasals: ['Фразові дієслова', null],
+    grammarquiz: ['Тренування', null],
     pack: [currentPack()?.name || '', 'Обери формат практики'],
     cards: [currentPack()?.name || '', null],
     write: [currentPack()?.name || '', 'Написання'],
@@ -841,11 +1091,12 @@ function renderTopbar(){
   const [title, sub] = titles[state.route] || ['', null];
   const left = document.createElement('div');
   left.className = 'topbar-left';
-  if (!['home','add','progress','chat'].includes(state.route)){
+  if (!['home','add','progress','chat','reference'].includes(state.route)){
     const back = document.createElement('button');
     back.className = 'back-btn';
     back.textContent = '←';
-    back.onclick = () => goto(state.route === 'pack' ? 'home' : 'pack', { confirmDeletePack:false });
+    const backTargets = { pack:'home', verbs:'reference', modals:'reference', articles:'reference', preps:'reference', tenses:'reference', conditionals:'reference', phrasals:'reference', verbtrain:'verbs', grammarquiz: state.grammarQuizBack || 'reference' };
+    back.onclick = () => goto(backTargets[state.route] || 'pack', { confirmDeletePack:false });
     left.appendChild(back);
   }
   const wrap = document.createElement('div');
@@ -873,6 +1124,16 @@ function renderScreen(){
     case 'add': return renderAdd();
     case 'progress': return renderProgress();
     case 'chat': return renderChat();
+    case 'reference': return renderReference();
+    case 'verbs': return renderVerbsList();
+    case 'verbtrain': return renderVerbTrain();
+    case 'modals': return renderStaticList('modals');
+    case 'articles': return renderStaticList('articles');
+    case 'preps': return renderStaticList('preps');
+    case 'tenses': return renderStaticList('tenses');
+    case 'conditionals': return renderStaticList('conditionals');
+    case 'phrasals': return renderStaticList('phrasals');
+    case 'grammarquiz': return renderGrammarQuiz();
     case 'pack': return renderPackModes();
     case 'cards': return renderCards();
     case 'write': return renderWrite();
@@ -1038,6 +1299,30 @@ function renderProgress(){
   `;
   wrap.appendChild(row);
 
+  const levelLabel = document.createElement('label');
+  levelLabel.className = 'field-label';
+  levelLabel.textContent = 'Твій рівень (для вправи «Речення»)';
+  wrap.appendChild(levelLabel);
+  const levelGrid = document.createElement('div');
+  levelGrid.className = 'tense-grid';
+  LEVELS.forEach(l => {
+    const chip = document.createElement('div');
+    chip.className = 'chip' + (state.level === l ? ' active' : '');
+    chip.textContent = l;
+    chip.onclick = async () => {
+      state.level = l;
+      const v = await storeSet('level', l);
+      render();
+    };
+    levelGrid.appendChild(chip);
+  });
+  wrap.appendChild(levelGrid);
+  const levelNote = document.createElement('p');
+  levelNote.className = 'subtitle';
+  levelNote.style.marginTop = '8px';
+  levelNote.textContent = `Більшість речень — на рівні ${state.level}, частина — складніші, рівня ${nextLevelUp(state.level)}, щоб прогрес йшов швидше.`;
+  wrap.appendChild(levelNote);
+
   const label = document.createElement('label');
   label.className = 'field-label';
   label.textContent = 'Пройдені часові форми (для вправи «Речення»)';
@@ -1060,6 +1345,23 @@ function renderProgress(){
     grid.appendChild(chip);
   });
   wrap.appendChild(grid);
+
+  const analyzeBtn = document.createElement('button');
+  analyzeBtn.className = 'secondary-btn';
+  const isAnalyzing = state.progressAnalysis && state.progressAnalysis.loading;
+  analyzeBtn.textContent = isAnalyzing ? 'Аналізую...' : '📊 Персональний аналіз прогресу';
+  analyzeBtn.disabled = !!isAnalyzing;
+  analyzeBtn.style.marginTop = '20px';
+  analyzeBtn.onclick = requestProgressAnalysis;
+  wrap.appendChild(analyzeBtn);
+  if (state.progressAnalysis && state.progressAnalysis.text){
+    const box = document.createElement('div');
+    box.className = 'feedback-box correct';
+    box.style.marginTop = '12px';
+    box.textContent = state.progressAnalysis.text;
+    wrap.appendChild(box);
+  }
+
   return wrap;
 }
 
@@ -1273,7 +1575,7 @@ function nextCard(){
 // ---------- Match ----------
 function startMatchSession(){
   const pack = currentPack();
-  const words = [...pack.words].sort(()=>Math.random()-0.5).slice(0,6);
+  const words = [...pack.words].sort(()=>Math.random()-0.5).slice(0,8);
   const left = words.map(w => ({ id:w.id, text:w.word })).sort(()=>Math.random()-0.5);
   const right = words.map(w => ({ id:w.id, text:w.translation })).sort(()=>Math.random()-0.5);
   state.matchState = { left, right, selectedLeft:null, selectedRight:null, matched:[], wrong:null };
@@ -1593,41 +1895,51 @@ function renderListening(){
   return wrap;
 }
 
-// ---------- Sentence ----------
+// ---------- Sentence (batched: 10 at a time) ----------
+const SENTENCE_BATCH_SIZE = 10;
+
 function startSentenceSession(){
-  state.sentenceState = { loading:true, data:null, answer:'', feedback:null, checking:false };
+  state.sentenceState = { loading:true, items:[], answers:[], currentIndex:0, checking:false, results:null };
   goto('sentence');
-  loadSentence();
+  loadSentenceBatch();
 }
 
-async function loadSentence(){
+async function loadSentenceBatch(){
   const pack = currentPack();
   const tenses = state.coveredTenses.length ? state.coveredTenses : ["Present Simple"];
   const words = pack.words.map(w=>w.word);
-  const system = "Ти — викладач англійської для україномовного студента рівня A2. Ти складаєш вправи на переклад речення з української на англійську.";
-  const prompt = `Дозволені часові форми: ${tenses.join(", ")}.\nСлова з пакету: ${words.join(", ")}.\nСклади ОДНЕ речення українською мовою, природний переклад якого англійською вимагає однієї з дозволених часових форм. Постарайся використати одне зі слів списку (у потрібній формі). Поверни ЛИШЕ JSON: {"ukrainian":"...", "expected_tense":"...", "target_word":"..."}`;
+  const level = state.level || 'A2';
+  const harderLevel = nextLevelUp(level);
+  const system = "Ти — викладач англійської для україномовного студента. Ти складаєш вправи на переклад речення з української на англійську.";
+  const prompt = `Рівень студента: ${level}. Дозволені часові форми: ${tenses.join(", ")}.\nСлова з пакету: ${words.join(", ")}.\n\nСклади ${SENTENCE_BATCH_SIZE} РІЗНИХ речень українською мовою, переклад яких англійською вимагає однієї з дозволених часових форм. Постарайся використати слова зі списку (різні слова в різних реченнях, у потрібній формі). Приблизно 60-70% речень має відповідати рівню ${level}, а 30-40% — навмисно трохи складніші, рівня ${harderLevel} (складніша лексика чи структура), щоб студент прогресував швидше. Поверни ЛИШЕ JSON-масив з ${SENTENCE_BATCH_SIZE} об'єктів формату {"ukrainian":"...", "expected_tense":"...", "target_word":"...", "level":"A2 або B1 тощо"} без пояснень.`;
   try{
-    const raw = await askClaude(prompt, system);
-    const data = parseJSONLoose(raw);
-    state.sentenceState = { loading:false, data, answer:'', feedback:null, checking:false };
+    const raw = await askClaude(prompt, system, 3000);
+    const items = parseJSONLoose(raw);
+    state.sentenceState = { loading:false, items, answers: items.map(()=>''), currentIndex:0, checking:false, results:null };
   }catch(e){
-    state.sentenceState = { loading:false, data:null, answer:'', feedback:{error:true}, checking:false };
+    state.sentenceState = { loading:false, items:[], answers:[], currentIndex:0, checking:false, results:'error' };
   }
   render();
 }
 
-async function checkSentence(){
+async function checkSentenceBatch(){
   const ss = state.sentenceState;
-  if (!ss.answer.trim()) return;
   ss.checking = true;
   render();
-  const system = "Ти перевіряєш переклад студента з української на англійську. Фокусуйся на граматичній правильності, правильній часовій формі та вживанні цільового слова. Пояснюй так, як робив би це в живій розмові: доброзичливо, конкретно, з поясненням граматики там, де є помилка, не обмежуй себе кількістю речень.";
-  const prompt = `Українське речення: "${ss.data.ukrainian}"\nОчікувана часова форма: ${ss.data.expected_tense}\nЦільове слово: ${ss.data.target_word}\nВідповідь студента: "${ss.answer}"\n\nПоверни ЛИШЕ JSON: {"correct": true/false, "feedback":"розмовне пояснення українською — чому правильно чи неправильно, з поясненням граматики за потреби", "corrected":"виправлений варіант, якщо є помилки, інакше порожній рядок"}`;
+  const system = "Ти перевіряєш переклади студента з української на англійську. Фокусуйся на граматичній правильності, правильній часовій формі та вживанні цільового слова кожного речення. Пояснюй доброзичливо і конкретно, з поясненням граматики там, де є помилка.";
+  const payload = ss.items.map((it, i) => ({
+    ukrainian: it.ukrainian,
+    expected_tense: it.expected_tense,
+    target_word: it.target_word,
+    student_answer: ss.answers[i]
+  }));
+  const prompt = `Ось ${payload.length} речень з відповідями студента у форматі JSON:\n${JSON.stringify(payload)}\n\nПеревір КОЖНЕ речення окремо. Поверни ЛИШЕ JSON-масив з ${payload.length} об'єктів у ТОМУ Ж ПОРЯДКУ, формату {"correct": true/false, "feedback":"розмовне пояснення українською чому правильно чи неправильно", "corrected":"виправлений варіант, якщо є помилки, інакше порожній рядок"}.`;
   try{
-    const raw = await askClaude(prompt, system);
-    ss.feedback = parseJSONLoose(raw);
+    const raw = await askClaude(prompt, system, 3000);
+    ss.results = parseJSONLoose(raw);
+    ss.results.forEach((r, i) => logEvent('sentence', r.correct, (ss.items[i] && ss.items[i].expected_tense) || ''));
   }catch(e){
-    ss.feedback = { error:true };
+    ss.results = 'error';
   }
   ss.checking = false;
   render();
@@ -1637,50 +1949,95 @@ function renderSentence(){
   const wrap = document.createElement('div');
   const ss = state.sentenceState;
   if (ss.loading){
-    const l = document.createElement('div'); l.className='loading'; l.textContent='Готую речення...';
+    const l = document.createElement('div'); l.className='loading'; l.textContent='Готую 10 речень...';
     wrap.appendChild(l);
     return wrap;
   }
-  if (!ss.data){
+  if (!ss.items.length){
     const l = document.createElement('div'); l.className='loading'; l.textContent='Не вдалось згенерувати речення. Спробуй ще раз.';
     wrap.appendChild(l);
     return wrap;
   }
+
+  // Results view after batch check
+  if (ss.results && ss.results !== 'error'){
+    const summary = document.createElement('div');
+    summary.className = 'progress-line';
+    const correctCount = ss.results.filter(r => r.correct).length;
+    summary.textContent = `Правильно: ${correctCount} / ${ss.results.length}`;
+    wrap.appendChild(summary);
+
+    ss.items.forEach((it, i) => {
+      const r = ss.results[i] || {};
+      const box = document.createElement('div');
+      box.className = 'prompt-box';
+      let html = `<div class="ukr" style="font-size:15px;">${escapeHtml(it.ukrainian)}</div>`;
+      html += `<div style="margin-top:8px;color:var(--slate);font-size:13px;">Твоя відповідь: ${escapeHtml(ss.answers[i] || '—')}</div>`;
+      box.innerHTML = html;
+      wrap.appendChild(box);
+      const fb = document.createElement('div');
+      fb.className = 'feedback-box ' + (r.correct ? 'correct' : 'incorrect');
+      let fbHtml = `<div>${escapeHtml(r.feedback || '')}</div>`;
+      if (r.corrected){
+        fbHtml += `<div style="margin-top:8px;"><strong>Варіант:</strong> ${escapeHtml(r.corrected)}</div>`;
+      }
+      fb.innerHTML = fbHtml;
+      wrap.appendChild(fb);
+    });
+
+    const next = document.createElement('button');
+    next.className = 'primary-btn';
+    next.textContent = 'Наступні 10 речень';
+    next.onclick = () => startSentenceSession();
+    wrap.appendChild(next);
+    return wrap;
+  }
+
+  if (ss.results === 'error'){
+    const l = document.createElement('div'); l.className='loading'; l.textContent='Не вдалось перевірити відповіді. Спробуй ще раз.';
+    wrap.appendChild(l);
+    const retry = document.createElement('button');
+    retry.className = 'primary-btn';
+    retry.textContent = 'Спробувати ще раз';
+    retry.onclick = () => { ss.results = null; render(); };
+    wrap.appendChild(retry);
+    return wrap;
+  }
+
+  // Answering view: one sentence at a time, no grading yet
+  const idx = ss.currentIndex;
+  const item = ss.items[idx];
+  const progress = document.createElement('div');
+  progress.className = 'progress-line';
+  progress.textContent = `${idx + 1} / ${ss.items.length}`;
+  wrap.appendChild(progress);
+
   const box = document.createElement('div');
   box.className = 'prompt-box';
-  box.innerHTML = `<div class="ukr">${escapeHtml(ss.data.ukrainian)}</div>`;
+  box.innerHTML = `<div class="ukr">${escapeHtml(item.ukrainian)}</div>`;
   wrap.appendChild(box);
 
   const input = document.createElement('input');
   input.type = 'text';
   input.placeholder = 'Переклади англійською...';
-  input.value = ss.answer;
-  input.oninput = (e) => { ss.answer = e.target.value; };
+  input.value = ss.answers[idx];
+  input.oninput = (e) => { ss.answers[idx] = e.target.value; };
   wrap.appendChild(input);
 
   const btn = document.createElement('button');
   btn.className = 'primary-btn';
-  btn.textContent = ss.checking ? 'Перевіряю...' : 'Перевірити';
+  const isLast = idx === ss.items.length - 1;
+  btn.textContent = ss.checking ? 'Перевіряю всі...' : (isLast ? 'Перевірити всі 10' : 'Далі');
   btn.disabled = ss.checking;
-  btn.onclick = checkSentence;
-  wrap.appendChild(btn);
-
-  if (ss.feedback && !ss.feedback.error){
-    const fb = document.createElement('div');
-    fb.className = 'feedback-box ' + (ss.feedback.correct ? 'correct' : 'incorrect');
-    let html = `<div>${escapeHtml(ss.feedback.feedback || '')}</div>`;
-    if (ss.feedback.corrected){
-      html += `<div style="margin-top:8px;"><strong>Варіант:</strong> ${escapeHtml(ss.feedback.corrected)}</div>`;
+  btn.onclick = () => {
+    if (isLast){
+      checkSentenceBatch();
+    } else {
+      ss.currentIndex++;
+      render();
     }
-    fb.innerHTML = html;
-    wrap.appendChild(fb);
-
-    const next = document.createElement('button');
-    next.className = 'secondary-btn';
-    next.textContent = 'Наступне речення';
-    next.onclick = () => startSentenceSession();
-    wrap.appendChild(next);
-  }
+  };
+  wrap.appendChild(btn);
   return wrap;
 }
 
@@ -1750,6 +2107,289 @@ async function sendChatMessage(){
   render();
 }
 
+// ---------- Reference tab ----------
+function renderReference(){
+  const wrap = document.createElement('div');
+  const list = document.createElement('div');
+  list.className = 'mode-list';
+  const sections = [
+    { key:'verbs', title:'Неправильні дієслова', desc:`${IRREGULAR_VERBS.length} дієслів за частотою вживання, з пошуком і тренуванням` },
+    { key:'modals', title:'Модальні дієслова', desc:'can / could / must / should / may / might...' },
+    { key:'articles', title:'Артиклі a / an / the', desc:'Коли який артикль вживати' },
+    { key:'preps', title:'Прийменники часу і місця', desc:'at / on / in / to / into' },
+    { key:'tenses', title:'12 часових форм', desc:'Формули і слова-сигнали одним екраном' },
+    { key:'conditionals', title:'Умовні речення', desc:'Zero / First / Second / Third Conditional' },
+    { key:'phrasals', title:'Фразові дієслова', desc:'Найуживаніші поєднання дієслово + прийменник' },
+  ];
+  sections.forEach(s => {
+    const item = document.createElement('div');
+    item.className = 'mode-item';
+    item.innerHTML = `<div class="title">${s.title}</div><div class="desc">${s.desc}</div>`;
+    item.onclick = () => goto(s.key);
+    list.appendChild(item);
+  });
+  wrap.appendChild(list);
+  return wrap;
+}
+
+function renderStaticList(topicKey){
+  const section = REFERENCE_SECTIONS[topicKey];
+  const wrap = document.createElement('div');
+  const trainBtn = document.createElement('button');
+  trainBtn.className = 'primary-btn';
+  trainBtn.textContent = '🎯 Тренувати';
+  trainBtn.style.marginBottom = '16px';
+  trainBtn.onclick = () => startGrammarQuiz(topicKey, topicKey);
+  wrap.appendChild(trainBtn);
+  section.data.forEach(item => {
+    const m = section.map(item);
+    const row = document.createElement('div');
+    row.className = 'ref-row';
+    row.innerHTML = `<div class="head"><span>${escapeHtml(m.title)}</span></div><div class="meta">${escapeHtml(m.meta)}</div><div class="ex">${escapeHtml(m.ex)}</div>`;
+    wrap.appendChild(row);
+  });
+  return wrap;
+}
+
+function startGrammarQuiz(topic, backRoute){
+  const bank = (REFERENCE_SECTIONS[topic] && REFERENCE_SECTIONS[topic].quiz) || [];
+  const shuffled = [...bank].sort(() => Math.random() - 0.5);
+  state.grammarQuizState = { topic, questions: shuffled, index: 0, score: 0, answered: null };
+  state.grammarQuizBack = backRoute;
+  goto('grammarquiz');
+}
+
+function renderGrammarQuiz(){
+  const wrap = document.createElement('div');
+  const qs = state.grammarQuizState;
+  if (!qs || !qs.questions.length){
+    const e = document.createElement('div'); e.className='empty-state'; e.textContent='Немає питань для цього розділу.';
+    wrap.appendChild(e);
+    return wrap;
+  }
+  if (qs.index >= qs.questions.length){
+    const done = document.createElement('div');
+    done.className = 'done-msg';
+    done.textContent = `Готово! Правильно: ${qs.score} / ${qs.questions.length}`;
+    wrap.appendChild(done);
+    const retry = document.createElement('button');
+    retry.className = 'primary-btn';
+    retry.textContent = 'Пройти ще раз';
+    retry.onclick = () => startGrammarQuiz(qs.topic, state.grammarQuizBack);
+    wrap.appendChild(retry);
+    return wrap;
+  }
+  const q = qs.questions[qs.index];
+  const progress = document.createElement('div');
+  progress.className = 'progress-line';
+  progress.textContent = `${qs.index + 1} / ${qs.questions.length}`;
+  wrap.appendChild(progress);
+  const box = document.createElement('div');
+  box.className = 'prompt-box';
+  box.innerHTML = `<div class="ukr" style="font-size:17px;">${escapeHtml(q.prompt)}</div>`;
+  wrap.appendChild(box);
+  q.options.forEach(opt => {
+    const btn = document.createElement('button');
+    btn.className = 'option-btn';
+    if (qs.answered){
+      if (opt === q.correct) btn.classList.add('correct');
+      else if (opt === qs.answered.chosen) btn.classList.add('wrong');
+    }
+    btn.disabled = !!qs.answered;
+    btn.textContent = opt;
+    btn.onclick = () => {
+      const isCorrect = opt === q.correct;
+      qs.answered = { chosen: opt };
+      if (isCorrect) qs.score++;
+      logEvent('grammar', isCorrect, qs.topic);
+      render();
+    };
+    wrap.appendChild(btn);
+  });
+  if (qs.answered){
+    const fb = document.createElement('div');
+    fb.className = 'feedback-box ' + (qs.answered.chosen === q.correct ? 'correct' : 'incorrect');
+    fb.textContent = q.explanation;
+    wrap.appendChild(fb);
+    const next = document.createElement('button');
+    next.className = 'primary-btn';
+    next.textContent = 'Далі';
+    next.onclick = () => { qs.index++; qs.answered = null; render(); };
+    wrap.appendChild(next);
+  }
+  return wrap;
+}
+
+// ---------- Irregular verbs ----------
+function renderVerbsList(){
+  const wrap = document.createElement('div');
+  const search = document.createElement('input');
+  search.type = 'text';
+  search.className = 'search-input';
+  search.placeholder = 'Пошук слова...';
+  search.value = state.verbSearch || '';
+  search.oninput = e => { state.verbSearch = e.target.value; render(); };
+  wrap.appendChild(search);
+
+  const rangeLabel = document.createElement('label');
+  rangeLabel.className = 'field-label';
+  rangeLabel.textContent = `Тренувати перші ${state.verbRangeTo || 50} дієслів зі списку`;
+  wrap.appendChild(rangeLabel);
+  const rangeRow = document.createElement('div');
+  rangeRow.className = 'range-row';
+  const range = document.createElement('input');
+  range.type = 'range';
+  range.min = 10;
+  range.max = IRREGULAR_VERBS.length;
+  range.step = 10;
+  range.value = state.verbRangeTo || 50;
+  range.oninput = e => { state.verbRangeTo = parseInt(e.target.value, 10); render(); };
+  rangeRow.appendChild(range);
+  wrap.appendChild(rangeRow);
+
+  const trainBtn = document.createElement('button');
+  trainBtn.className = 'primary-btn';
+  trainBtn.textContent = `🎯 Тренувати (1–${state.verbRangeTo || 50})`;
+  trainBtn.style.marginBottom = '16px';
+  trainBtn.onclick = () => startVerbTrainSession(state.verbRangeTo || 50);
+  wrap.appendChild(trainBtn);
+
+  const q = (state.verbSearch || '').toLowerCase().trim();
+  const filtered = q
+    ? IRREGULAR_VERBS.filter(v => v.base.toLowerCase().includes(q) || v.translation.toLowerCase().includes(q) || v.past.toLowerCase().includes(q) || v.participle.toLowerCase().includes(q))
+    : IRREGULAR_VERBS;
+
+  filtered.forEach(v => {
+    const row = document.createElement('div');
+    row.className = 'ref-row';
+    row.innerHTML = `<div class="head"><span>${v.rank}. ${escapeHtml(v.base)} — ${escapeHtml(v.past)} — ${escapeHtml(v.participle)}</span></div><div class="meta">${escapeHtml(v.translation)}</div>`;
+    wrap.appendChild(row);
+  });
+  return wrap;
+}
+
+function dueVerbs(subsetIds){
+  const now = Date.now();
+  const prog = state.verbProgress || {};
+  const shuffled = [...subsetIds].sort(() => Math.random() - 0.5);
+  const withMeta = shuffled.map(id => ({ id, box: (prog[id] && prog[id].box) || 1, dueAt: (prog[id] && prog[id].dueAt) || 0 }));
+  const due = withMeta.filter(w => w.dueAt <= now).sort((a,b) => a.box - b.box);
+  const ordered = (due.length ? due : withMeta.sort((a,b) => a.box - b.box));
+  return ordered.map(w => IRREGULAR_VERBS.find(v => v.id === w.id));
+}
+
+function gradeVerb(verbId, easy){
+  const prog = state.verbProgress || {};
+  const cur = prog[verbId] || { box:1, dueAt:0 };
+  const box = easy ? Math.min(5, cur.box + 1) : 1;
+  prog[verbId] = { box, dueAt: Date.now() + BOX_HOURS[box] * 3600 * 1000 };
+  state.verbProgress = prog;
+  storeSet('verbProgress', prog);
+  logEvent('verb', easy, verbId);
+}
+
+function startVerbTrainSession(n){
+  const subsetIds = IRREGULAR_VERBS.slice(0, n).map(v => v.id);
+  state.verbTrainQueue = dueVerbs(subsetIds);
+  state.verbTrainIndex = 0;
+  state.verbTrainFlipped = false;
+  goto('verbtrain');
+}
+
+function nextVerb(){
+  state.verbTrainIndex++;
+  state.verbTrainFlipped = false;
+  render();
+}
+
+function renderVerbTrain(){
+  const wrap = document.createElement('div');
+  wrap.className = 'card-stage';
+  if (state.verbTrainIndex >= state.verbTrainQueue.length){
+    wrap.appendChild(doneMsg());
+    return wrap;
+  }
+  const v = state.verbTrainQueue[state.verbTrainIndex];
+  const progress = document.createElement('div');
+  progress.className = 'progress-line';
+  progress.textContent = `${state.verbTrainIndex + 1} / ${state.verbTrainQueue.length}`;
+  wrap.appendChild(progress);
+
+  const card = document.createElement('div');
+  card.className = 'flashcard';
+  card.innerHTML = state.verbTrainFlipped
+    ? `<button class="speak-btn" aria-label="Прослухати">🔊</button><div><div class="word" style="font-size:20px;">${escapeHtml(v.base)}</div><div class="translation" style="font-size:17px;margin-top:6px;">${escapeHtml(v.past)}</div><div class="translation" style="font-size:17px;">${escapeHtml(v.participle)}</div></div>`
+    : `<div class="word-wrap"><div class="word">${escapeHtml(v.translation)}</div></div>`;
+  wrap.appendChild(card);
+
+  if (state.verbTrainFlipped){
+    const speakBtn = card.querySelector('.speak-btn');
+    speakBtn.onpointerdown = (e) => e.stopPropagation();
+    speakBtn.onclick = (e) => { e.stopPropagation(); speakText(v.base + ', ' + v.past + ', ' + v.participle); };
+    card.onclick = () => { state.verbTrainFlipped = false; render(); };
+  } else {
+    card.onclick = () => { state.verbTrainFlipped = true; render(); };
+  }
+
+  const hint = document.createElement('div');
+  hint.className = 'flip-hint';
+  hint.textContent = state.verbTrainFlipped ? 'Тапни, щоб перевернути назад' : 'Тапни, щоб побачити 3 форми';
+  wrap.appendChild(hint);
+
+  if (state.verbTrainFlipped){
+    const row = document.createElement('div');
+    row.className = 'grade-row';
+    const hard = document.createElement('button'); hard.className = 'grade-btn grade-hard'; hard.textContent = 'Складно';
+    hard.onclick = () => { gradeVerb(v.id, false); nextVerb(); };
+    const easy = document.createElement('button'); easy.className = 'grade-btn grade-easy'; easy.textContent = 'Легко';
+    easy.onclick = () => { gradeVerb(v.id, true); nextVerb(); };
+    row.appendChild(hard); row.appendChild(easy);
+    wrap.appendChild(row);
+  }
+  return wrap;
+}
+
+// ---------- Personal progress analysis (on demand, one API call) ----------
+function buildActivitySummary(){
+  const now = Date.now();
+  const week = 7 * 24 * 3600 * 1000;
+  const log = state.activityLog || [];
+  const last7 = log.filter(e => now - e.ts <= week);
+  const prev7 = log.filter(e => now - e.ts > week && now - e.ts <= 2 * week);
+  function stats(arr){
+    const total = arr.length;
+    const correct = arr.filter(e => e.correct).length;
+    const byKind = {};
+    arr.forEach(e => {
+      byKind[e.kind] = byKind[e.kind] || { total:0, correct:0 };
+      byKind[e.kind].total++;
+      if (e.correct) byKind[e.kind].correct++;
+    });
+    return { total, correct, rate: total ? Math.round(correct/total*100) : null, byKind };
+  }
+  return { last7: stats(last7), prev7: stats(prev7), totalEver: log.length };
+}
+
+async function requestProgressAnalysis(){
+  state.progressAnalysis = { loading:true, text:null };
+  render();
+  const summary = buildActivitySummary();
+  if (summary.totalEver < 5){
+    state.progressAnalysis = { loading:false, text:'Ще замало даних для аналізу — попрактикуйся трохи більше і повертайся сюди.' };
+    render();
+    return;
+  }
+  const system = "Ти — персональний супервізор з вивчення англійської мови. Аналізуєш статистику практики студента і даєш чесний, конкретний, підтримуючий висновок українською мовою: що покращилось порівняно з попереднім тижнем, де є проблеми, на що звернути увагу. Не вигадуй деталей, яких немає в даних. Пиши як людина в розмові, а не як формальний звіт зі списком.";
+  const prompt = `Ось статистика практики студента у форматі JSON:\n${JSON.stringify(summary)}\n\nkind означає тип вправи: word (картки/слова), sentence (побудова речень), grammar (граматичні тести), verb (неправильні дієслова). rate — відсоток правильних відповідей. last7 — останні 7 днів, prev7 — тиждень до того. Дай короткий (3-5 речень) персональний аналіз прогресу.`;
+  try{
+    const text = await askClaude(prompt, system, 500);
+    state.progressAnalysis = { loading:false, text };
+  }catch(e){
+    state.progressAnalysis = { loading:false, text:'Не вдалось отримати аналіз. Спробуй пізніше.' };
+  }
+  render();
+}
+
 // ---------- Bottom nav ----------
 function renderBottomNav(){
   const nav = document.createElement('div');
@@ -1758,6 +2398,7 @@ function renderBottomNav(){
     { key:'home', icon:'🗂', label:'Практика' },
     { key:'add', icon:'✏️', label:'Слова' },
     { key:'chat', icon:'💬', label:'Питання' },
+    { key:'reference', icon:'📚', label:'Довідник' },
     { key:'progress', icon:'📈', label:'Прогрес' },
   ];
   items.forEach(it => {
