@@ -278,6 +278,16 @@
     font-style:italic;
   }
   .flip-hint{ color:var(--slate); font-size:12.5px; margin-top:16px; }
+  .direction-toggle{
+    background:none;
+    border:1px solid var(--line);
+    color:var(--cream-text);
+    border-radius:20px;
+    padding:6px 14px;
+    font-size:13px;
+    cursor:pointer;
+    margin-bottom:16px;
+  }
   .swipe-label{
     position:absolute;
     top:14px;
@@ -817,6 +827,9 @@ let state = {
   verbTrainQueue: [],
   verbTrainIndex: 0,
   verbTrainFlipped: false,
+  cardDirection: 'en',
+  matchAllWords: [],
+  matchPageIndex: 0,
   grammarQuizState: null,
   grammarQuizBack: null,
   progressAnalysis: null,
@@ -877,6 +890,7 @@ async function loadAllData(){
   const level = await storeGet('level');
   const activityLog = await storeGet('activityLog');
   const verbProgress = await storeGet('verbProgress');
+  const cardDirection = await storeGet('cardDirection');
   state.packs = (packs && packs.length) ? packs : (state.user ? [] : [seedDemoPack()]);
   if ((!packs || !packs.length) && !state.user) await storeSet('packs', state.packs);
   state.coveredTenses = tenses || ["Present Simple","Present Perfect"];
@@ -885,6 +899,7 @@ async function loadAllData(){
   state.chatMessages = chat || [];
   state.activityLog = activityLog || [];
   state.verbProgress = verbProgress || {};
+  state.cardDirection = cardDirection || 'en';
   document.body.setAttribute('data-theme', state.theme);
 }
 
@@ -1467,16 +1482,34 @@ function renderCards(){
     return wrap;
   }
   const word = state.sessionQueue[state.sessionIndex];
+
+  const dirBtn = document.createElement('button');
+  dirBtn.className = 'direction-toggle';
+  dirBtn.textContent = state.cardDirection === 'ua' ? 'Показ: 🇺🇦 → 🇬🇧 (тапни, щоб змінити)' : 'Показ: 🇬🇧 → 🇺🇦 (тапни, щоб змінити)';
+  dirBtn.onclick = async () => {
+    state.cardDirection = state.cardDirection === 'ua' ? 'en' : 'ua';
+    state.flipped = false;
+    await storeSet('cardDirection', state.cardDirection);
+    render();
+  };
+  wrap.appendChild(dirBtn);
+
   const progress = document.createElement('div');
   progress.className = 'progress-line';
   progress.textContent = `${state.sessionIndex + 1} / ${state.sessionQueue.length}`;
   wrap.appendChild(progress);
 
+  const isUaFront = state.cardDirection === 'ua';
+  const frontText = isUaFront ? word.translation : word.word;
+  const backText = isUaFront ? word.word : word.translation;
+  const showTranscriptionFront = !isUaFront && word.transcription;
+  const showTranscriptionBack = isUaFront && word.transcription;
+
   const card = document.createElement('div');
   card.className = 'flashcard';
   card.innerHTML = state.flipped
-    ? `<button class="speak-btn" aria-label="Прослухати">🔊</button><div><div class="translation">${escapeHtml(word.translation)}</div><div class="example">${escapeHtml(word.example)}</div></div>`
-    : `<button class="speak-btn" aria-label="Прослухати">🔊</button><div class="word-wrap"><div class="word">${escapeHtml(word.word)}</div>${word.transcription ? `<div class="transcription">${escapeHtml(word.transcription)}</div>` : ''}</div><div class="swipe-label know">Знаю</div><div class="swipe-label forgot">Забув</div>`;
+    ? `<button class="speak-btn" aria-label="Прослухати">🔊</button><div><div class="translation">${escapeHtml(backText)}</div>${showTranscriptionBack ? `<div class="transcription">${escapeHtml(word.transcription)}</div>` : ''}<div class="example">${escapeHtml(word.example)}</div></div>`
+    : `<button class="speak-btn" aria-label="Прослухати">🔊</button><div class="word-wrap"><div class="word">${escapeHtml(frontText)}</div>${showTranscriptionFront ? `<div class="transcription">${escapeHtml(word.transcription)}</div>` : ''}</div><div class="swipe-label know">Знаю</div><div class="swipe-label forgot">Забув</div>`;
   wrap.appendChild(card);
 
   const speakBtn = card.querySelector('.speak-btn');
@@ -1573,18 +1606,35 @@ function nextCard(){
 }
 
 // ---------- Match ----------
+const MATCH_PAGE_SIZE = 10;
+
 function startMatchSession(){
   const pack = currentPack();
-  const words = [...pack.words].sort(()=>Math.random()-0.5).slice(0,8);
-  const left = words.map(w => ({ id:w.id, text:w.word })).sort(()=>Math.random()-0.5);
-  const right = words.map(w => ({ id:w.id, text:w.translation })).sort(()=>Math.random()-0.5);
-  state.matchState = { left, right, selectedLeft:null, selectedRight:null, matched:[], wrong:null };
+  state.matchAllWords = [...pack.words].sort(() => Math.random() - 0.5);
+  state.matchPageIndex = 0;
+  loadMatchPage();
   goto('match');
+}
+
+function loadMatchPage(){
+  const start = state.matchPageIndex * MATCH_PAGE_SIZE;
+  const pageWords = state.matchAllWords.slice(start, start + MATCH_PAGE_SIZE);
+  const left = pageWords.map(w => ({ id:w.id, text:w.word })).sort(() => Math.random() - 0.5);
+  const right = pageWords.map(w => ({ id:w.id, text:w.translation })).sort(() => Math.random() - 0.5);
+  state.matchState = { left, right, selectedLeft:null, selectedRight:null, matched:[], wrong:null };
 }
 
 function renderMatch(){
   const wrap = document.createElement('div');
   const ms = state.matchState;
+  const total = state.matchAllWords.length;
+  const pageStart = state.matchPageIndex * MATCH_PAGE_SIZE + 1;
+  const pageEnd = Math.min((state.matchPageIndex + 1) * MATCH_PAGE_SIZE, total);
+  const progress = document.createElement('div');
+  progress.className = 'progress-line';
+  progress.textContent = `${pageStart}–${pageEnd} з ${total}`;
+  wrap.appendChild(progress);
+
   const cols = document.createElement('div');
   cols.className = 'match-cols';
   const colL = document.createElement('div'); colL.className = 'match-col';
@@ -1613,10 +1663,21 @@ function renderMatch(){
   wrap.appendChild(cols);
 
   if (ms.matched.length === ms.left.length){
+    const hasMore = pageEnd < total;
     const done = document.createElement('div');
     done.className = 'done-msg';
-    done.textContent = 'Усі пари знайдено 🎉';
+    done.textContent = hasMore ? 'Ці 10 пройдено 🎉' : `Усі ${total} слів пройдено 🎉`;
     wrap.appendChild(done);
+    const nextBtn = document.createElement('button');
+    nextBtn.className = 'primary-btn';
+    if (hasMore){
+      nextBtn.textContent = 'Наступні 10 слів';
+      nextBtn.onclick = () => { state.matchPageIndex++; loadMatchPage(); render(); };
+    } else {
+      nextBtn.textContent = 'Почати спочатку';
+      nextBtn.onclick = () => startMatchSession();
+    }
+    wrap.appendChild(nextBtn);
   }
   return wrap;
 }
