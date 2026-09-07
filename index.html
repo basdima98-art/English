@@ -949,9 +949,9 @@ async function callClaudeAPI(body){
   }
 }
 
-async function askClaude(userPrompt, systemPrompt, maxTokens){
+async function askClaude(userPrompt, systemPrompt, maxTokens, model){
   const body = {
-    model: "claude-haiku-4-5-20251001",
+    model: model || "claude-haiku-4-5-20251001",
     max_tokens: maxTokens || 1000,
     messages: [{ role: "user", content: userPrompt }]
   };
@@ -1989,7 +1989,7 @@ async function loadSentenceBatch(){
   const system = "Ти — викладач англійської для україномовного студента. Ти складаєш вправи на переклад речення з української на англійську.";
   const prompt = `Рівень студента: ${level}. Дозволені часові форми: ${tenses.join(", ")}.\nСлова з пакету: ${words.join(", ")}.\n\nСклади ${SENTENCE_BATCH_SIZE} РІЗНИХ речень українською мовою, переклад яких англійською вимагає однієї з дозволених часових форм. Постарайся використати слова зі списку (різні слова в різних реченнях, у потрібній формі). Приблизно 60-70% речень має відповідати рівню ${level}, а 30-40% — навмисно трохи складніші, рівня ${harderLevel} (складніша лексика чи структура), щоб студент прогресував швидше. Поверни ЛИШЕ JSON-масив з ${SENTENCE_BATCH_SIZE} об'єктів формату {"ukrainian":"...", "expected_tense":"...", "target_word":"...", "level":"A2 або B1 тощо"} без пояснень.`;
   try{
-    const raw = await askClaude(prompt, system, 3000);
+    const raw = await askClaude(prompt, system, 3000, "claude-sonnet-4-6");
     const items = parseJSONLoose(raw);
     state.sentenceState = { loading:false, items, answers: items.map(()=>''), currentIndex:0, checking:false, results:null };
   }catch(e){
@@ -2009,9 +2009,9 @@ async function checkSentenceBatch(){
     target_word: it.target_word,
     student_answer: ss.answers[i]
   }));
-  const prompt = `Ось ${payload.length} речень з відповідями студента у форматі JSON:\n${JSON.stringify(payload)}\n\nПеревір КОЖНЕ речення окремо. Поверни ЛИШЕ JSON-масив з ${payload.length} об'єктів у ТОМУ Ж ПОРЯДКУ, формату {"correct": true/false, "feedback":"розмовне пояснення українською чому правильно чи неправильно", "corrected":"виправлений варіант, якщо є помилки, інакше порожній рядок"}.`;
+  const prompt = `Ось ${payload.length} речень з відповідями студента у форматі JSON:\n${JSON.stringify(payload)}\n\nПеревір КОЖНЕ речення окремо. Поверни ЛИШЕ JSON-масив з ${payload.length} об'єктів у ТОМУ Ж ПОРЯДКУ, формату {"correct": true/false, "feedback":"розмовне пояснення українською чому правильно чи неправильно", "tense_note":"яку саме часову форму треба застосувати в цьому реченні і чому саме її (коротко, українською)", "corrected":"виправлений варіант, якщо є помилки, інакше порожній рядок"}.`;
   try{
-    const raw = await askClaude(prompt, system, 3000);
+    const raw = await askClaude(prompt, system, 3000, "claude-sonnet-4-6");
     ss.results = parseJSONLoose(raw);
     ss.results.forEach((r, i) => logEvent('sentence', r.correct, (ss.items[i] && ss.items[i].expected_tense) || ''));
   }catch(e){
@@ -2054,6 +2054,9 @@ function renderSentence(){
       const fb = document.createElement('div');
       fb.className = 'feedback-box ' + (r.correct ? 'correct' : 'incorrect');
       let fbHtml = `<div>${escapeHtml(r.feedback || '')}</div>`;
+      if (r.tense_note){
+        fbHtml += `<div style="margin-top:8px;"><strong>Часова форма:</strong> ${escapeHtml(r.tense_note)}</div>`;
+      }
       if (r.corrected){
         fbHtml += `<div style="margin-top:8px;"><strong>Варіант:</strong> ${escapeHtml(r.corrected)}</div>`;
       }
