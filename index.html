@@ -634,6 +634,16 @@
   .sb-tok.in-line{ border-color:var(--sage); }
   .sm-hud{ display:flex; justify-content:space-between; font-size:18px; font-weight:600; margin-bottom:14px; }
   .sm-timer.low{ color:var(--rust); }
+
+  .lesson-h{ font-family:'IBM Plex Serif',serif; font-weight:600; font-size:16px; margin:20px 0 8px; }
+  .lesson-p{ font-size:14.5px; line-height:1.6; margin-bottom:6px; }
+  .lesson-list{ margin:0 0 6px; padding-left:20px; font-size:14.5px; line-height:1.6; }
+  .lesson-list li{ margin-bottom:6px; }
+  .lesson-ex{ position:relative; border-left:3px solid var(--sage); padding:6px 44px 6px 12px; margin:8px 0; }
+  .lesson-ex .en{ font-weight:600; font-size:14.5px; }
+  .lesson-ex .ua{ color:var(--slate); font-size:13px; margin-top:2px; }
+  .lesson-speak{ position:absolute; right:4px; top:6px; background:none; border:none; font-size:18px; cursor:pointer; }
+  .section-label{ color:var(--slate); font-size:12.5px; text-transform:uppercase; letter-spacing:0.06em; margin:18px 0 8px; }
 </style>
 </head>
 <body>
@@ -1241,6 +1251,7 @@ let state = {
   wsDragging: false,
   wsSetupError: null,
   dataError: null,
+  lessonId: null, lessonTopic: null, trainerState: null, trainerTitle: '', trainerFocus: '', trainerBack: 'reference', sentenceBatchSize: 10,
   gamePackIds: [], gameSetupKey: null, gameSetupError: null, hmState: null, sbState: null, smState: null,
 };
 
@@ -1314,6 +1325,7 @@ async function loadAllDataInner(){
   const activityLog = await storeGet('activityLog');
   const verbProgress = await storeGet('verbProgress');
   const cardDirection = await storeGet('cardDirection');
+  const sentenceBatch = await storeGet('sentenceBatch');
   state.packs = (packs && packs.length) ? packs : (state.user ? [] : [seedDemoPack()]);
   if ((!packs || !packs.length) && !state.user) await storeSet('packs', state.packs);
   state.coveredTenses = tenses || ["Present Simple","Present Perfect"];
@@ -1323,6 +1335,7 @@ async function loadAllDataInner(){
   state.activityLog = activityLog || [];
   state.verbProgress = verbProgress || {};
   state.cardDirection = cardDirection || 'en';
+  state.sentenceBatchSize = (sentenceBatch === 5 || sentenceBatch === 10) ? sentenceBatch : 10;
   document.body.setAttribute('data-theme', state.theme);
 }
 
@@ -1533,6 +1546,8 @@ function renderTopbar(){
     'wordsearch-setup': ['Філворд', 'Обери пакети й складність'],
     games: ['Ігри', 'Вчись граючи'],
     'game-setup': [(GAME_META[state.gameSetupKey]||{}).title || 'Гра', 'Обери пакети'],
+    lesson: [(findLesson(state.lessonId)||{lesson:{title:'Урок'}}).lesson.title, null],
+    'lesson-train': ['Тренування', state.trainerTitle || null],
     'hangman-play': ['Шибениця', ''],
     'builder-play': ['Склади речення', ''],
     'speed-play': ['Speed Match', ''],
@@ -1554,7 +1569,7 @@ function renderTopbar(){
     const back = document.createElement('button');
     back.className = 'back-btn';
     back.textContent = '←';
-    const backTargets = { pack:'home', verbs:'reference', modals:'reference', articles:'reference', preps:'reference', tenses:'reference', conditionals:'reference', phrasals:'reference', verbtrain:'verbs', grammarquiz: state.grammarQuizBack || 'reference', 'wordsearch-setup':'games', 'wordsearch-play':'wordsearch-setup', 'game-setup':'games', 'hangman-play':'game-setup', 'builder-play':'game-setup', 'speed-play':'game-setup' };
+    const backTargets = { pack:'home', verbs:'reference', modals:'reference', articles:'reference', preps:'reference', tenses:'reference', conditionals:'reference', phrasals:'reference', verbtrain:'verbs', lesson: state.lessonTopic || 'reference', 'lesson-train': state.trainerBack || 'reference', grammarquiz: state.grammarQuizBack || 'reference', 'wordsearch-setup':'games', 'wordsearch-play':'wordsearch-setup', 'game-setup':'games', 'hangman-play':'game-setup', 'builder-play':'game-setup', 'speed-play':'game-setup' };
     back.onclick = () => goto(backTargets[state.route] || 'pack', { confirmDeletePack:false });
     left.appendChild(back);
   }
@@ -1593,6 +1608,8 @@ function renderScreen(){
     case 'conditionals': return renderStaticList('conditionals');
     case 'phrasals': return renderStaticList('phrasals');
     case 'grammarquiz': return renderGrammarQuiz();
+    case 'lesson': return renderLesson();
+    case 'lesson-train': return renderTrainer();
     case 'games': return renderGames();
     case 'game-setup': return renderGameSetup();
     case 'hangman-play': return renderHangman();
@@ -1834,6 +1851,21 @@ function renderProgress(){
 
 function renderPackModes(){
   const wrap = document.createElement('div');
+  const bl = document.createElement('div');
+  bl.className = 'section-label';
+  bl.style.margin = '0 0 8px';
+  bl.textContent = 'Режим «Речення»: скільки речень за раз';
+  wrap.appendChild(bl);
+  const bt = document.createElement('div');
+  bt.className = 'pack-mode-toggle';
+  [5, 10].forEach(n => {
+    const c = document.createElement('div');
+    c.className = 'chip' + (state.sentenceBatchSize === n ? ' active' : '');
+    c.textContent = n + ' речень';
+    c.onclick = async () => { state.sentenceBatchSize = n; await storeSet('sentenceBatch', n); render(); };
+    bt.appendChild(c);
+  });
+  wrap.appendChild(bt);
   const list = document.createElement('div');
   list.className = 'mode-list';
   const modes = [
@@ -2419,8 +2451,7 @@ function renderListening(){
   return wrap;
 }
 
-// ---------- Sentence (batched: 10 at a time) ----------
-const SENTENCE_BATCH_SIZE = 10;
+// ---------- Sentence (batched: 5 or 10 at a time) ----------
 
 function startSentenceSession(){
   state.sentenceState = { loading:true, items:[], answers:[], currentIndex:0, checking:false, results:null };
@@ -2435,7 +2466,7 @@ async function loadSentenceBatch(){
   const level = state.level || 'A2';
   const harderLevel = nextLevelUp(level);
   const system = "Ти — викладач англійської для україномовного студента. Ти складаєш вправи на переклад речення з української на англійську.";
-  const prompt = `Рівень студента: ${level}. Дозволені часові форми: ${tenses.join(", ")}.\nСлова з пакету: ${words.join(", ")}.\n\nСклади ${SENTENCE_BATCH_SIZE} РІЗНИХ речень українською мовою, переклад яких англійською вимагає однієї з дозволених часових форм. Постарайся використати слова зі списку (різні слова в різних реченнях, у потрібній формі). Приблизно 60-70% речень має відповідати рівню ${level}, а 30-40% — навмисно трохи складніші, рівня ${harderLevel} (складніша лексика чи структура), щоб студент прогресував швидше.\n\nВАЖЛИВО: розподіли речення приблизно порівну між трьома формами — стверджувальні (affirmative), заперечні (negative) і питальні (question) — так, щоб студент практикував побудову всіх трьох форм у кожному часі. Сформулюй українське речення так, щоб було природно перекласти саме в потрібній формі (наприклад, для заперечення — "Я не..." / "Вона ще не...", для питання — прямо постав питання).\n\nПоверни ЛИШЕ JSON-масив з ${SENTENCE_BATCH_SIZE} об'єктів формату {"ukrainian":"...", "expected_tense":"...", "target_word":"...", "form":"affirmative або negative або question", "level":"A2 або B1 тощо"} без пояснень.`;
+  const prompt = `Рівень студента: ${level}. Дозволені часові форми: ${tenses.join(", ")}.\nСлова з пакету: ${words.join(", ")}.\n\nСклади ${state.sentenceBatchSize} РІЗНИХ речень українською мовою, переклад яких англійською вимагає однієї з дозволених часових форм. Постарайся використати слова зі списку (різні слова в різних реченнях, у потрібній формі). Приблизно 60-70% речень має відповідати рівню ${level}, а 30-40% — навмисно трохи складніші, рівня ${harderLevel} (складніша лексика чи структура), щоб студент прогресував швидше.\n\nВАЖЛИВО: розподіли речення приблизно порівну між трьома формами — стверджувальні (affirmative), заперечні (negative) і питальні (question) — так, щоб студент практикував побудову всіх трьох форм у кожному часі. Сформулюй українське речення так, щоб було природно перекласти саме в потрібній формі (наприклад, для заперечення — "Я не..." / "Вона ще не...", для питання — прямо постав питання).\n\nПоверни ЛИШЕ JSON-масив з ${state.sentenceBatchSize} об'єктів формату {"ukrainian":"...", "expected_tense":"...", "target_word":"...", "form":"affirmative або negative або question", "level":"A2 або B1 тощо"} без пояснень.`;
   try{
     const raw = await askClaude(prompt, system, 3000, "claude-sonnet-4-6");
     const items = parseJSONLoose(raw);
@@ -2474,7 +2505,7 @@ function renderSentence(){
   const wrap = document.createElement('div');
   const ss = state.sentenceState;
   if (ss.loading){
-    const l = document.createElement('div'); l.className='loading'; l.textContent='Готую 10 речень...';
+    const l = document.createElement('div'); l.className='loading'; l.textContent='Готую ' + state.sentenceBatchSize + ' речень...';
     wrap.appendChild(l);
     return wrap;
   }
@@ -2515,7 +2546,7 @@ function renderSentence(){
 
     const next = document.createElement('button');
     next.className = 'primary-btn';
-    next.textContent = 'Наступні 10 речень';
+    next.textContent = 'Наступні ' + state.sentenceBatchSize + ' речень';
     next.onclick = () => startSentenceSession();
     wrap.appendChild(next);
     return wrap;
@@ -2666,12 +2697,40 @@ function renderReference(){
 function renderStaticList(topicKey){
   const section = REFERENCE_SECTIONS[topicKey];
   const wrap = document.createElement('div');
+  const lessons = GRAMMAR_LESSONS[topicKey] || [];
+  if (lessons.length){
+    const lab = document.createElement('div');
+    lab.className = 'section-label';
+    lab.textContent = 'Уроки — натисни, щоб відкрити';
+    wrap.appendChild(lab);
+    const list = document.createElement('div');
+    list.className = 'mode-list';
+    list.style.marginTop = '0';
+    lessons.forEach(l => {
+      const item = document.createElement('div');
+      item.className = 'mode-item';
+      item.innerHTML = `<div class="title">📖 ${escapeHtml(l.title)}</div><div class="desc">${escapeHtml(l.sub || '')}</div>`;
+      item.onclick = () => goto('lesson', { lessonId:l.id, lessonTopic:topicKey });
+      list.appendChild(item);
+    });
+    wrap.appendChild(list);
+  }
   const trainBtn = document.createElement('button');
   trainBtn.className = 'primary-btn';
-  trainBtn.textContent = '🎯 Тренувати';
-  trainBtn.style.marginBottom = '16px';
-  trainBtn.onclick = () => startGrammarQuiz(topicKey, topicKey);
+  trainBtn.textContent = '🧩 Тренувати речення';
+  trainBtn.style.marginTop = '16px';
+  trainBtn.onclick = () => startTrainer(section.title, lessons.length ? lessons.map(l => l.focus).join('; ') : section.title, topicKey);
   wrap.appendChild(trainBtn);
+  const quizBtn = document.createElement('button');
+  quizBtn.className = 'secondary-btn';
+  quizBtn.textContent = '🎯 Тест з варіантами';
+  quizBtn.style.marginBottom = '8px';
+  quizBtn.onclick = () => startGrammarQuiz(topicKey, topicKey);
+  wrap.appendChild(quizBtn);
+  const lab2 = document.createElement('div');
+  lab2.className = 'section-label';
+  lab2.textContent = 'Шпаргалка';
+  wrap.appendChild(lab2);
   section.data.forEach(item => {
     const m = section.map(item);
     const row = document.createElement('div');
@@ -3633,6 +3692,549 @@ function renderSpeed(){
     fl.style.color = sm.flash.ok ? 'var(--sage)' : 'var(--rust)';
     fl.textContent = sm.flash.ok ? sm.flash.text : '✗ ' + sm.flash.text;
     wrap.appendChild(fl);
+  }
+  return wrap;
+}
+
+// ---------- Grammar lessons (detailed pages) ----------
+function mkTense(id, title, sub, focus, uses, forms, signals, ex, notes){
+  return { id, title, sub, focus, blocks: [
+    { h:'Коли вживати', list: uses },
+    { h:'Формула', list: forms },
+    { h:'Слова-сигнали', p: signals },
+    { h:'Приклади', ex },
+    { h:'Зверни увагу', list: notes },
+  ]};
+}
+
+const GRAMMAR_LESSONS = {
+  tenses: [
+    { id:'tenses-overview', title:'Як швидко обрати час', sub:'4 питання замість 12 формул',
+      focus:'вибір правильного часу з 12 часових форм за змістом речення',
+      blocks:[
+        { h:'Крок 1: яка це група?', list:[
+          'Simple — факт, звичка, послідовність подій (що, як часто, у якому порядку).',
+          'Continuous — дія в процесі саме в певний момент (що відбувається/відбувалося/відбуватиметься).',
+          'Perfect — результат або досвід; дія завершена ДО певного моменту.',
+          'Perfect Continuous — тривалість: як довго дія тривала до певного моменту.',
+        ]},
+        { h:'Крок 2: який це момент?', list:[
+          'Present — зараз або зв\'язок із теперішнім.',
+          'Past — минуле.',
+          'Future — майбутнє.',
+        ]},
+        { h:'Приклад: одне й те саме дієслово', ex:[
+          ['I write emails.', 'Я пишу листи (звичка).'],
+          ['I am writing an email.', 'Я пишу лист (зараз).'],
+          ['I have written an email.', 'Я написав лист (результат є).'],
+          ['I have been writing emails all morning.', 'Я пишу листи весь ранок (тривалість).'],
+        ]},
+        { h:'Швидка шпаргалка по сигналах', list:[
+          'always, usually, every day → Present Simple',
+          'now, at the moment → Present Continuous',
+          'already, yet, just, ever, since, for → Present Perfect',
+          'yesterday, ago, last week → Past Simple',
+          'while, when (процес перервано) → Past Continuous',
+          'before, by the time (раніше за іншу дію в минулому) → Past Perfect',
+          'tomorrow, soon, I think → Future Simple',
+          'by tomorrow, by 5 pm → Future Perfect',
+        ]},
+      ]},
+    mkTense('present-simple','Present Simple','Звички, факти, розклади','Present Simple: звички, факти, розклади; do/does, -s у 3-й особі; always, usually, every day',
+      ['Звички й регулярні дії.','Факти й загальні істини.','Розклади (поїзди, фільми, уроки).','Стани й почуття: like, know, want, believe.'],
+      ['+ I/you/we/they work · he/she/it work-s','− I do not (don\'t) work · she does not (doesn\'t) work','? Do you work? · Does she work?'],
+      'always, usually, often, sometimes, never, every day/week, on Mondays, once a week.',
+      [['She works in a bank.','Вона працює в банку.'],['Water boils at 100 degrees.','Вода кипить за 100 градусів.'],['The train leaves at eight.','Потяг відправляється о восьмій.'],['Does he play tennis?','Він грає в теніс?']],
+      ['У 3-й особі однини додаємо -s/-es: he watches, she studies.','Після does/doesn\'t дієслово БЕЗ -s: Does she work? (не works).','Частотні слова стоять перед основним дієсловом: I often go, але після be: He is always late.']),
+    mkTense('present-continuous','Present Continuous','Дія в процесі зараз','Present Continuous: дія зараз, тимчасова ситуація, плани на найближче майбутнє; am/is/are + V-ing',
+      ['Дія відбувається просто зараз.','Тимчасова ситуація (цього тижня, цього року).','Домовленість на найближче майбутнє.','Дратівливі повторювані дії з always.'],
+      ['+ I am / he is / we are + working','− I am not · he is not (isn\'t) · we are not (aren\'t) + working','? Are you working? · Is she working?'],
+      'now, right now, at the moment, currently, today, this week, Look! Listen!',
+      [['I am reading a book now.','Я зараз читаю книжку.'],['They are staying at a hotel this week.','Цього тижня вони живуть у готелі.'],['We are meeting Anna tomorrow.','Завтра ми зустрічаємося з Анною.'],['He is always losing his keys!','Він постійно губить ключі!']],
+      ['Стативні дієслова зазвичай не вживаються в Continuous: I know (не I am knowing), I want, I like, I understand.','Правопис: run → running, make → making, lie → lying.']),
+    mkTense('present-perfect','Present Perfect','Результат і досвід','Present Perfect: результат, досвід, for/since, just/already/yet; have/has + V3',
+      ['Результат у теперішньому: I have lost my keys (їх досі немає).','Життєвий досвід: Have you ever been to Italy?','Дія почалась у минулому й триває досі (for/since) — зі стативними дієсловами.','Щойно / вже / ще не: just, already, yet.'],
+      ['+ I/you/we/they have + V3 · he/she/it has + V3','− have not (haven\'t) / has not (hasn\'t) + V3','? Have you finished? · Has she called?'],
+      'already, yet, just, ever, never, so far, recently, lately, for + період, since + момент, today / this week (період ще не закінчився).',
+      [['I have already done my homework.','Я вже зробив домашку.'],['Have you ever eaten sushi?','Ти коли-небудь їв суші?'],['She has lived here since 2019.','Вона живе тут із 2019 року.'],['We haven\'t seen him for a week.','Ми не бачили його тиждень.']],
+      ['З конкретним минулим часом (yesterday, in 2019, two days ago) вживаємо Past Simple, не Present Perfect.','has been to = був і повернувся; has gone to = поїхав і ще там.','for + тривалість (for two years), since + початок (since 2020).']),
+    mkTense('present-perfect-continuous','Present Perfect Continuous','Тривалість до теперішнього','Present Perfect Continuous: тривалість дії до теперішнього; have/has been + V-ing; for, since, how long',
+      ['Дія почалась у минулому й триває досі — акцент на тривалості.','Дія щойно закінчилась, і її наслідки видно зараз.'],
+      ['+ I/you/we/they have been + V-ing · he/she/it has been + V-ing','− have/has not been + V-ing','? Have you been waiting long? · How long has she been working?'],
+      'for, since, how long, all day, all morning, lately, recently.',
+      [['I have been learning English for two years.','Я вивчаю англійську вже два роки.'],['She has been crying — her eyes are red.','Вона плакала — в неї червоні очі.'],['How long have you been waiting?','Як довго ти чекаєш?']],
+      ['Perfect Continuous — про процес і тривалість, Perfect — про результат: I\'ve been reading all day vs I\'ve read three chapters.','Зі стативними дієсловами (know, like, be) вживаємо Present Perfect: I have known him for years.']),
+    mkTense('past-simple','Past Simple','Завершені дії в минулому','Past Simple: завершена дія в минулому, послідовність подій, yesterday/ago/last; V2, did + V1',
+      ['Завершена дія в минулому з відомим часом.','Послідовність дій у минулому.','Минулі звички й стани, яких уже немає.'],
+      ['+ V2: worked, went, saw','− did not (didn\'t) + V1: I didn\'t go','? Did + підмет + V1: Did you go?'],
+      'yesterday, last week/month/year, two days ago, in 2020, when I was a child, then.',
+      [['I visited my aunt yesterday.','Вчора я відвідав тітку.'],['She got up, had breakfast and left.','Вона встала, поснідала й пішла.'],['Did you see that film?','Ти бачив той фільм?'],['We didn\'t go out last night.','Ми не виходили ввечері.']],
+      ['Після did/didn\'t дієслово у початковій формі: Did she go? (не went).','Правильні дієслова: -ed; неправильні — вчи таблицю форм.','Вимова -ed: /t/ worked, /d/ played, /ɪd/ wanted.']),
+    mkTense('past-continuous','Past Continuous','Процес у минулому','Past Continuous: процес у певний момент минулого, перервана дія, паралельні дії; was/were + V-ing; while, when',
+      ['Дія тривала в конкретний момент у минулому.','Тривала дія, яку перервала коротша (Past Simple).','Дві дії відбувалися одночасно.'],
+      ['+ I/he/she/it was + V-ing · you/we/they were + V-ing','− was not (wasn\'t) / were not (weren\'t) + V-ing','? Was she sleeping? · Were they working?'],
+      'while, when, as, at 8 o\'clock yesterday, all evening, at that moment.',
+      [['At 8 pm yesterday I was cooking dinner.','Учора о 8 вечора я готував вечерю.'],['I was walking home when it started to rain.','Я йшов додому, коли пішов дощ.'],['While she was reading, he was watching TV.','Поки вона читала, він дивився телевізор.']],
+      ['Коротка дія, що перервала, — Past Simple (when it started), тривала — Past Continuous (I was walking).','while зазвичай із Past Continuous, when — частіше з Past Simple.']),
+    mkTense('past-perfect','Past Perfect','Раніше за іншу дію в минулому','Past Perfect: дія раніше за іншу дію чи момент у минулому; had + V3; before, after, by the time',
+      ['Дія сталася ДО іншої дії або моменту в минулому.','Пояснення причини минулої ситуації.','Непряма мова (He said that he had finished).'],
+      ['+ had + V3 (для всіх осіб): I had finished','− had not (hadn\'t) + V3','? Had you finished?'],
+      'before, after, by the time, already, just, never … before, until, when.',
+      [['When I arrived, the film had already started.','Коли я прийшов, фільм уже почався.'],['She was late because she had missed the bus.','Вона запізнилась, бо пропустила автобус.'],['I had never seen snow before I moved here.','Я ніколи не бачив снігу до переїзду сюди.']],
+      ['Раніша дія — Past Perfect, пізніша — Past Simple.','Якщо порядок подій зрозумілий із after/before, часто можна обійтися Past Simple, але Past Perfect підкреслює «раніше».']),
+    mkTense('past-perfect-continuous','Past Perfect Continuous','Тривалість до моменту в минулому','Past Perfect Continuous: тривалість дії до моменту в минулому; had been + V-ing; for, since',
+      ['Дія тривала певний час до моменту в минулому.','Причина стану в минулому: її очі були червоні, бо вона довго плакала.'],
+      ['+ had been + V-ing','− had not (hadn\'t) been + V-ing','? Had you been waiting long?'],
+      'for, since, how long, before, until, when.',
+      [['She had been waiting for an hour when he came.','Вона чекала вже годину, коли він прийшов.'],['His hands were dirty: he had been working in the garden.','Його руки були брудні: він працював у саду.']],
+      ['Зі стативними дієсловами — Past Perfect: I had known her for years.','Вживається рідко; у розмові зазвичай достатньо Past Perfect або Past Simple.']),
+    mkTense('future-simple','Future Simple','will: рішення, прогнози, обіцянки','Future Simple: will + V1; спонтанні рішення, прогнози, обіцянки; відмінність від be going to',
+      ['Спонтанне рішення в момент мовлення.','Прогноз чи припущення (I think, probably).','Обіцянка, пропозиція, прохання.','Факт про майбутнє.'],
+      ['+ will + V1: I will call you (I\'ll)','− will not (won\'t) + V1','? Will you help me?'],
+      'tomorrow, next week, soon, in a year, probably, perhaps, I think, I\'m sure.',
+      [['I\'ll help you with that bag.','Я допоможу тобі з цією сумкою.'],['It will rain tomorrow.','Завтра буде дощ.'],['I won\'t tell anyone.','Я нікому не скажу.'],['Will you open the window, please?','Ти не відчиниш вікно, будь ласка?']],
+      ['Після if, when, as soon as, before, after у підрядному реченні про майбутнє — Present Simple: If it rains, we will stay home (не If it will rain).','Заплановані наміри: be going to — I\'m going to study tonight.']),
+    mkTense('future-continuous','Future Continuous','Процес у майбутньому','Future Continuous: дія в процесі в певний момент майбутнього; will be + V-ing; ввічливі запитання про плани',
+      ['Дія буде в процесі в конкретний момент майбутнього.','Ввічливе запитання про плани іншої людини.'],
+      ['+ will be + V-ing','− will not (won\'t) be + V-ing','? Will you be working tomorrow?'],
+      'at this time tomorrow, at 5 pm tomorrow, this time next week, all day tomorrow.',
+      [['At 8 tomorrow I will be sleeping.','Завтра о 8 я ще спатиму.'],['This time next week we will be flying to Rome.','За тиждень у цей час ми летітимемо до Риму.'],['Will you be using the car tonight?','Ти будеш сьогодні ввечері користуватися машиною?']],
+      ['Це не просто «процес»: форма підкреслює саме момент у майбутньому.','Стативні дієслова (know, like) у Continuous не вживаємо.']),
+    mkTense('future-perfect','Future Perfect','Завершено до моменту в майбутньому','Future Perfect: дія буде завершена до певного моменту в майбутньому; will have + V3; by tomorrow, by 5 pm',
+      ['Дія буде завершена до певного моменту в майбутньому.'],
+      ['+ will have + V3','− will not (won\'t) have + V3','? Will you have finished by Friday?'],
+      'by tomorrow, by 5 pm, by next year, by the time, before.',
+      [['I will have finished the report by Friday.','Я закінчу звіт до п\'ятниці.'],['By next year she will have lived here for ten years.','Наступного року їй буде десять років, як вона тут живе.']],
+      ['by + момент = «не пізніше ніж», until = «аж до» (дія триває до цього моменту).','Після by the time у підрядному — Present Simple: By the time you come, I will have left.']),
+    mkTense('future-perfect-continuous','Future Perfect Continuous','Тривалість до моменту в майбутньому','Future Perfect Continuous: тривалість дії до моменту в майбутньому; will have been + V-ing; by … for',
+      ['Підкреслює, як довго дія триватиме до певного моменту в майбутньому.'],
+      ['+ will have been + V-ing','− will not (won\'t) have been + V-ing','? How long will you have been working by June?'],
+      'by (June), by the time, for + період.',
+      [['By June I will have been working here for five years.','До червня я пропрацюю тут п\'ять років.'],['By 6 pm they will have been driving for ten hours.','До шостої вечора вони будуть за кермом уже десять годин.']],
+      ['Найрідша часова форма: у розмові часто замінюється Future Perfect або Future Simple.','Зі стативними дієсловами — Future Perfect.']),
+  ],
+
+  articles: [
+    { id:'art-a-an', title:'Неозначений артикль a / an', sub:'Один із багатьох, вперше згадали',
+      focus:'неозначений артикль a/an: вибір a чи an за звуком, перша згадка, професії, with per',
+      blocks:[
+        { h:'Правило вибору', list:['a — перед приголосним ЗВУКОМ: a book, a university /ju:/, a European.','an — перед голосним ЗВУКОМ: an apple, an hour (h не вимовляється), an MBA.','Важливий звук, а не літера.'] },
+        { h:'Коли вживаємо', list:['Предмет згадується вперше або він один із багатьох: I saw a dog.','Професії: She is a doctor.','Значення «один»: a hundred, a thousand, once a week.','Вираз типу What a day! / Such a pity!','Тільки з лічильними іменниками в однині.'] },
+        { h:'Приклади', ex:[['I need an umbrella.','Мені потрібна парасолька.'],['He is an engineer.','Він інженер.'],['She goes to the gym twice a week.','Вона ходить у спортзал двічі на тиждень.']] },
+        { h:'Зверни увагу', list:['Із множиною й нелічильними — a/an немає: a water ✗ → some water.','Перед прикметником вибір за першим звуком: a good idea, an old idea.'] },
+      ]},
+    { id:'art-the', title:'Означений артикль the', sub:'Конкретне, відоме, єдине',
+      focus:'означений артикль the: конкретний предмет, друга згадка, єдиний у своєму роді, найвищий ступінь, географія',
+      blocks:[
+        { h:'Коли вживаємо', list:['Предмет уже відомий співрозмовникам або вже згадувався: I saw a dog. The dog was big.','Єдиний у своєму роді: the sun, the moon, the sky, the Internet.','Найвищий ступінь і порядкові числа: the best, the first.','Конкретизація: the book on the table, the man who called.','Деякі географічні назви: the USA, the UK, the Alps, the Atlantic, the Volga, the Netherlands.','the + прикметник = група людей: the rich, the young.'] },
+        { h:'Приклади', ex:[['Close the door, please.','Зачини, будь ласка, двері.'],['She is the best student in class.','Вона найкраща студентка в класі.'],['The sun rises in the east.','Сонце сходить на сході.']] },
+        { h:'Зверни увагу', list:['Не вживаємо the з більшістю країн, міст, мов (Ukraine, Paris, English).','Після by the time, the more … the more — стала конструкція.'] },
+      ]},
+    { id:'art-zero', title:'Нульовий артикль', sub:'Коли артикль не потрібен',
+      focus:'відсутність артикля: множина й нелічильні в загальному значенні, мови, їжа, спорт, at home/school/work, by bus',
+      blocks:[
+        { h:'Артикля немає', list:['Множина й нелічильні в загальному значенні: I love music. Dogs are loyal.','Мови, більшість країн і міст: He speaks German. I live in Poland.','Прийоми їжі: have breakfast / lunch / dinner.','Види спорту й ігри: play football, play chess.','Назви вулиць, озер, гір (окремо): Oxford Street, Lake Garda, Mount Everest.','Стійкі вирази: at home, at work, at school, in bed, by bus, by car, on foot.'] },
+        { h:'Приклади', ex:[['We have lunch at one.','Ми обідаємо о першій.'],['She goes to work by bus.','Вона їздить на роботу автобусом.'],['Children need love.','Дітям потрібна любов.']] },
+        { h:'Зверни увагу', list:['Конкретизація повертає the: The music I heard yesterday was great.','go to school (вчитися) vs go to the school (до будівлі, наприклад на зустріч).'] },
+      ]},
+  ],
+
+  modals: [
+    { id:'modal-can', title:'can / could / be able to', sub:'Вміння, можливість, дозвіл',
+      focus:'can, could, be able to: вміння, можливість, дозвіл, ввічливі прохання',
+      blocks:[
+        { h:'Значення', list:['can — вміння й можливість зараз: I can swim.','could — вміння в минулому (загальне) і ввічливе прохання: Could you help me?','be able to — коли can не підходить: у майбутньому, Perfect, інфінітиві (I will be able to come).','Дозвіл: Can I sit here?'] },
+        { h:'Приклади', ex:[['She can speak three languages.','Вона вміє говорити трьома мовами.'],['When I was five, I could read.','Коли мені було п\'ять, я вже вмів читати.'],['Could you open the window?','Ти не міг би відчинити вікно?'],['I will be able to help you tomorrow.','Завтра я зможу тобі допомогти.']] },
+        { h:'Зверни увагу', list:['Після модальних дієслово без to й без -s: She can swim (не cans, не to swim).','Заперечення: cannot (can\'t), could not (couldn\'t).','Для разової дії в минулому: I was able to finish (не could).'] },
+      ]},
+    { id:'modal-must', title:'must / have to / mustn\'t', sub:'Обов\'язок і заборона',
+      focus:'must, have to, mustn\'t, don\'t have to: обов\'язок, заборона, відсутність необхідності',
+      blocks:[
+        { h:'Значення', list:['must — сильна внутрішня необхідність або правило від мовця: I must call my mother.','have to — зовнішній обов\'язок: I have to wear a uniform.','mustn\'t — заборона: You mustn\'t smoke here.','don\'t have to — немає потреби (але можна): You don\'t have to come.'] },
+        { h:'Приклади', ex:[['You must be quiet in the library.','У бібліотеці треба мовчати.'],['She has to get up at six.','Їй треба вставати о шостій.'],['We mustn\'t be late.','Нам не можна запізнюватися.'],['He doesn\'t have to work on Sundays.','Йому не обов\'язково працювати в неділю.']] },
+        { h:'Зверни увагу', list:['mustn\'t ≠ don\'t have to: перше — заборона, друге — не обов\'язково!','Минулий час must — had to: I had to leave early.','Висновок: He must be tired = Він, мабуть, втомився.'] },
+      ]},
+    { id:'modal-should', title:'should / ought to / had better', sub:'Поради й рекомендації',
+      focus:'should, ought to, had better: поради, рекомендації, попередження',
+      blocks:[
+        { h:'Значення', list:['should — порада, думка: You should see a doctor.','ought to — майже те саме, трохи формальніше.','had better — сильна порада з попередженням про наслідки: You\'d better hurry or you\'ll miss the train.','Заперечення: shouldn\'t, had better not.'] },
+        { h:'Приклади', ex:[['You should drink more water.','Тобі варто пити більше води.'],['They ought to apologise.','Їм слід вибачитися.'],['We\'d better leave now.','Нам краще піти зараз.'],['You shouldn\'t eat so much sugar.','Тобі не слід їсти стільки цукру.']] },
+        { h:'Зверни увагу', list:['had better — це теперішній/майбутній час, хоча й виглядає як минулий.','Should have + V3 — докір про минуле: You should have called me.'] },
+      ]},
+    { id:'modal-may', title:'may / might', sub:'Можливість і дозвіл',
+      focus:'may, might: можливість, імовірність, дозвіл, ввічливі прохання',
+      blocks:[
+        { h:'Значення', list:['may / might — можливо, є шанс: It may rain.','might — менша впевненість: He might come, but I\'m not sure.','may — формальний дозвіл і прохання: May I come in?','Заперечення: may not, might not (mightn\'t рідко).'] },
+        { h:'Приклади', ex:[['She may be at home.','Вона, можливо, вдома.'],['We might go to the cinema tonight.','Можливо, ми підемо сьогодні в кіно.'],['May I use your phone?','Можна скористатися вашим телефоном?']] },
+        { h:'Зверни увагу', list:['Для минулого: may/might have + V3 — He might have forgotten.','may not (не дозволено/можливо ні) і can\'t (напевно ні) — різні речі: She can\'t be at home = напевно, її немає вдома.'] },
+      ]},
+    { id:'modal-will', title:'will / would / shall', sub:'Рішення, пропозиції, ввічливість',
+      focus:'will, would, shall: обіцянки, пропозиції, ввічливі прохання, минулі звички',
+      blocks:[
+        { h:'Значення', list:['will — спонтанне рішення, обіцянка, прохання: I\'ll help you.','would — ввічливе прохання й пропозиція: Would you like some tea?','would — минулі звички: When I was a kid, I would play outside every day.','shall — пропозиція/питання про пораду з I/we: Shall we go?'] },
+        { h:'Приклади', ex:[['Would you like a coffee?','Хочете кави?'],['I would like to book a table.','Я хотів би замовити столик.'],['Shall I open the window?','Відчинити вікно?'],['I won\'t forget you.','Я тебе не забуду.']] },
+        { h:'Зверни увагу', list:['would like + іменник/to + дієслово — ввічливіше, ніж want.','would у другому умовному: If I had money, I would travel.'] },
+      ]},
+  ],
+
+  preps: [
+    { id:'prep-time', title:'Прийменники часу: at / on / in', sub:'Коли саме',
+      focus:'прийменники часу at, on, in, for, since, during, until, by, before, after',
+      blocks:[
+        { h:'at / on / in', list:['at — точний час і короткі моменти: at 5 o\'clock, at night, at the weekend (BrE), at noon.','on — дні й дати: on Monday, on 5 May, on my birthday, on Friday morning.','in — місяці, роки, сезони, частини дня: in May, in 2024, in summer, in the morning.'] },
+        { h:'Тривалість і межі', list:['for + тривалість: for two hours.','since + початок: since 2020.','during — протягом: during the film.','until — аж до: until 6 pm.','by — не пізніше ніж: by Friday.','before / after — до / після.'] },
+        { h:'Приклади', ex:[['The meeting starts at 9.','Зустріч починається о 9.'],['My birthday is on 12 June.','Мій день народження — 12 червня.'],['I was born in 1998.','Я народився в 1998 році.'],['She has lived here for five years.','Вона живе тут п\'ять років.']] },
+        { h:'Зверни увагу', list:['Без прийменника: yesterday, tomorrow, next week, last year, this morning, every day.','in the morning, але on Monday morning.'] },
+      ]},
+    { id:'prep-place', title:'Прийменники місця: at / on / in', sub:'Де саме',
+      focus:'прийменники місця at, on, in, under, over, above, below, between, next to, behind, in front of',
+      blocks:[
+        { h:'at / on / in', list:['at — точка, місце події: at the bus stop, at the door, at school, at work, at a party.','on — на поверхні: on the table, on the wall, on the second floor, on the bus/train.','in — всередині, у просторі: in the room, in a box, in London, in a car, in bed.'] },
+        { h:'Інші прийменники', list:['under — під, over/above — над, below — нижче.','between — між двома, among — серед кількох.','next to / beside — поруч, behind — позаду, in front of — перед, opposite — навпроти.','near — біля, by — біля, поруч (by the window).'] },
+        { h:'Приклади', ex:[['The keys are on the table.','Ключі на столі.'],['She lives in Warsaw.','Вона живе у Варшаві.'],['Wait for me at the entrance.','Чекай мене біля входу.'],['The cat is under the chair.','Кіт під стільцем.']] },
+        { h:'Зверни увагу', list:['in a car / taxi, але on a bus / train / plane / bike.','at home, at work, at school — без артикля.'] },
+      ]},
+    { id:'prep-move', title:'Прийменники руху: to / into / through', sub:'Куди й звідки',
+      focus:'прийменники руху to, into, out of, onto, through, across, along, towards, from, up, down',
+      blocks:[
+        { h:'Напрям', list:['to — до, у напрямку: go to school, go to London.','into — всередину: walk into the room.','out of — з, зсередини: get out of the car.','onto — на поверхню: jump onto the table.','from — з, від: come from Poland.','towards — у напрямку до (не обов\'язково дійти).'] },
+        { h:'Маршрут', list:['through — крізь: through the forest.','across — через (площину): across the street, across the bridge.','along — уздовж: along the river.','up / down — вгору / вниз: up the stairs, down the hill.','round / around — навколо.'] },
+        { h:'Приклади', ex:[['He walked into the kitchen.','Він зайшов на кухню.'],['They drove through the tunnel.','Вони проїхали тунель.'],['We walked along the beach.','Ми йшли пляжем.'],['She ran across the road.','Вона перебігла дорогу.']] },
+        { h:'Зверни увагу', list:['go home — без to!','arrive in (країна, місто), arrive at (менше місце, станція, аеропорт).'] },
+      ]},
+    { id:'prep-dep', title:'Прийменники після слів', sub:'Стійкі пари: good at, afraid of',
+      focus:'залежні прийменники після прикметників і дієслів: good at, interested in, afraid of, depend on, wait for, listen to',
+      blocks:[
+        { h:'Прикметник + прийменник', list:['good at / bad at, interested in, afraid of, proud of, tired of, fond of.','angry with (людина) / angry about (ситуація), worried about, excited about.','different from, similar to, married to, responsible for.'] },
+        { h:'Дієслово + прийменник', list:['depend on, rely on, wait for, look for, listen to, talk to/with, think about/of.','apologise for, thank for, pay for, ask for, belong to, believe in, agree with.'] },
+        { h:'Приклади', ex:[['She is good at maths.','Вона добре знає математику.'],['I\'m afraid of spiders.','Я боюся павуків.'],['It depends on the weather.','Це залежить від погоди.'],['They are waiting for the bus.','Вони чекають автобус.']] },
+        { h:'Зверни увагу', list:['Після прийменника дієслово має форму -ing: interested in learning.','Прийменники в англійській і українській часто не збігаються: wait for (чекати кого), listen to (слухати кого).'] },
+      ]},
+  ],
+
+  conditionals: [
+    { id:'cond-zero', title:'Zero Conditional', sub:'Закони природи й загальні факти',
+      focus:'Zero Conditional: if + Present Simple, Present Simple; факти й закони',
+      blocks:[
+        { h:'Коли вживаємо', list:['Загальні істини й наукові факти.','Завжди повторювана причина й наслідок.'] },
+        { h:'Формула', list:['If + Present Simple, Present Simple','If you heat ice, it melts.','if можна замінити на when: When you heat ice, it melts.'] },
+        { h:'Приклади', ex:[['If you mix red and blue, you get purple.','Якщо змішати червоний і синій, вийде фіолетовий.'],['If I\'m tired, I go to bed early.','Коли я втомлююся, лягаю спати рано.']] },
+        { h:'Зверни увагу', list:['В обох частинах Present Simple, без will.','Перед головною частиною кома, якщо if-частина на початку.'] },
+      ]},
+    { id:'cond-first', title:'First Conditional', sub:'Реальна ситуація в майбутньому',
+      focus:'First Conditional: if + Present Simple, will + V1; реальні майбутні ситуації',
+      blocks:[
+        { h:'Коли вживаємо', list:['Реальна або цілком можлива умова в майбутньому.','Обіцянки, попередження, плани.'] },
+        { h:'Формула', list:['If + Present Simple, will + V1','If it rains tomorrow, we will stay at home.','Також: unless (= if not), as soon as, when, before — з Present Simple.'] },
+        { h:'Приклади', ex:[['If you study, you will pass the exam.','Якщо ти вчитимеш, складеш іспит.'],['I will call you if I have time.','Я зателефоную, якщо матиму час.'],['Unless you hurry, you\'ll be late.','Якщо ти не поквапишся, то запізнишся.']] },
+        { h:'Зверни увагу', list:['Після if не вживаємо will: If it will rain ✗ → If it rains.','Замість will можуть бути can, may, must, imperative.'] },
+      ]},
+    { id:'cond-second', title:'Second Conditional', sub:'Нереальна або малоймовірна ситуація',
+      focus:'Second Conditional: if + Past Simple, would + V1; уявні й малоймовірні ситуації; If I were you',
+      blocks:[
+        { h:'Коли вживаємо', list:['Уявна або малоймовірна ситуація в теперішньому чи майбутньому.','Поради: If I were you, I would…'] },
+        { h:'Формула', list:['If + Past Simple, would + V1','If I had a lot of money, I would travel the world.','Із be — зазвичай were для всіх осіб: If I were you…'] },
+        { h:'Приклади', ex:[['If I won the lottery, I would buy a house.','Якби я виграв у лотерею, я б купив будинок.'],['She would help you if she knew.','Вона б допомогла, якби знала.'],['If I were you, I would apologise.','На твоєму місці я б вибачився.']] },
+        { h:'Зверни увагу', list:['Past Simple тут — не про минуле, а про нереальність.','would може бути скорочено: I\'d.'] },
+      ]},
+    { id:'cond-third', title:'Third Conditional', sub:'Нереальне минуле, жаль',
+      focus:'Third Conditional: if + Past Perfect, would have + V3; нереальне минуле, жаль',
+      blocks:[
+        { h:'Коли вживаємо', list:['Про минуле, яке неможливо змінити.','Жаль, докір, уявний інший результат.'] },
+        { h:'Формула', list:['If + Past Perfect, would have + V3','If I had studied, I would have passed the exam.'] },
+        { h:'Приклади', ex:[['If she had left earlier, she wouldn\'t have missed the train.','Якби вона вийшла раніше, вона б не запізнилась на потяг.'],['We would have come if we had known.','Ми б прийшли, якби знали.']] },
+        { h:'Зверни увагу', list:['В if-частині не вживаємо would have.','Часто разом із I wish + Past Perfect: I wish I had studied.'] },
+      ]},
+    { id:'cond-mixed', title:'Mixed Conditional', sub:'Минуле впливає на теперішнє',
+      focus:'Mixed Conditional: if + Past Perfect, would + V1 (вплив минулого на теперішнє) і if + Past Simple, would have + V3',
+      blocks:[
+        { h:'Коли вживаємо', list:['Умова з минулого → наслідок у теперішньому.','Постійна особливість → наслідок у минулому.'] },
+        { h:'Формули', list:['If + Past Perfect, would + V1 (минуле → теперішнє): If I had taken the job, I would be rich now.','If + Past Simple, would have + V3 (теперішнє → минуле): If I were braver, I would have said it.'] },
+        { h:'Приклади', ex:[['If I had slept well, I wouldn\'t be tired now.','Якби я добре виспався, я б зараз не був утомлений.'],['If she weren\'t so shy, she would have spoken.','Якби вона не була така сором\'язлива, вона б заговорила.']] },
+        { h:'Зверни увагу', list:['Спершу визнач, до якого часу належить умова, і до якого — наслідок.'] },
+      ]},
+    { id:'cond-wish', title:'wish / if only', sub:'Бажання змінити ситуацію',
+      focus:'wish і if only: бажання про теперішнє (Past Simple), про минуле (Past Perfect), про майбутнє (would)',
+      blocks:[
+        { h:'Три випадки', list:['Теперішнє: wish + Past Simple — I wish I had a car.','Минуле: wish + Past Perfect — I wish I had studied.','Роздратування чи майбутнє: wish + would — I wish you would stop talking.'] },
+        { h:'Приклади', ex:[['I wish I lived by the sea.','Шкода, що я не живу біля моря.'],['She wishes she had called him.','Вона шкодує, що не зателефонувала йому.'],['If only it would stop raining!','Якби ж цей дощ припинився!']] },
+        { h:'Зверни увагу', list:['If only — емоційніший варіант wish.','Із be після wish зазвичай were: I wish I were taller.'] },
+      ]},
+  ],
+
+  phrasals: [
+    { id:'phr-basics', title:'Як працюють фразові дієслова', sub:'Що таке phrasal verb і як їх вчити',
+      focus:'фразові дієслова: дієслово + частка, відокремлювані й невідокремлювані, місце займенника',
+      blocks:[
+        { h:'Що це', list:['Дієслово + частка (прийменник/прислівник), що разом дають нове значення: give up = здатися.','Значення часто не вгадати з окремих слів: look after ≠ дивитися після.'] },
+        { h:'Типи', list:['Без додатка: Please sit down. The plane took off.','З додатком, який можна ВІДОКРЕМИТИ: turn off the light = turn the light off.','З додатком, який НЕ можна відокремлювати: look after the baby (не look the baby after).'] },
+        { h:'Золоте правило займенників', list:['З відокремлюваними займенник завжди ПОСЕРЕДИНІ: turn it off (не turn off it).','Іменник — на вибір: turn off the TV / turn the TV off.'] },
+        { h:'Приклади', ex:[['She gave up smoking.','Вона кинула палити.'],['Turn the music down, please.','Приглуши музику, будь ласка.'],['I\'m looking for my keys.','Я шукаю ключі.']] },
+        { h:'Як вчити', list:['Вчи не списком, а з реченням-прикладом.','Групуй за дієсловом (get, take, put, look) або за часткою (up, out, off).'] },
+      ]},
+    { id:'phr-get', title:'get, take, put', sub:'Найчастіші базові дієслова',
+      focus:'фразові дієслова з get, take, put: get up, get on with, get over, take off, take after, put on, put off, put up with',
+      blocks:[
+        { h:'get', list:['get up — вставати; get on (with) — ладнати; get over — одужати/пережити; get back — повернутися; get along — ладнати.'] },
+        { h:'take', list:['take off — зняти (одяг) / злетіти; take after — бути схожим на (родича); take up — почати займатися; take out — виводити/виймати; take over — перебрати контроль.'] },
+        { h:'put', list:['put on — одягнути; put off — відкласти; put up with — миритися з; put out — загасити; put away — прибрати.'] },
+        { h:'Приклади', ex:[['I get up at seven.','Я встаю о сьомій.'],['The plane took off late.','Літак злетів із запізненням.'],['Don\'t put off your homework.','Не відкладай домашку.'],['I can\'t put up with this noise.','Я не можу миритися з цим шумом.']] },
+      ]},
+    { id:'phr-look', title:'look, turn, go, come', sub:'Рух, пошук, зміни',
+      focus:'фразові дієслова з look, turn, go, come, give: look for, look after, look up, turn on, turn off, go on, come back, give up',
+      blocks:[
+        { h:'look', list:['look for — шукати; look after — доглядати; look up — знайти (у словнику); look forward to — з нетерпінням чекати (+ -ing); look out — стережись.'] },
+        { h:'turn / give', list:['turn on / off — вмикати / вимикати; turn up / down — збільшити / зменшити гучність; give up — здатися; give back — повернути.'] },
+        { h:'go / come', list:['go on — продовжувати; go out — виходити (з друзями); come back — повертатися; come across — випадково натрапити; come up with — придумати.'] },
+        { h:'Приклади', ex:[['I\'m looking forward to seeing you.','Я з нетерпінням чекаю нашої зустрічі.'],['Please turn off your phone.','Вимкни, будь ласка, телефон.'],['She came up with a great idea.','Вона придумала чудову ідею.'],['Look up the word in a dictionary.','Знайди слово в словнику.']] },
+        { h:'Зверни увагу', list:['look forward to — це to-прийменник, тому далі -ing: look forward to meeting.'] },
+      ]},
+  ],
+};
+
+function findLesson(id){
+  for (const k of Object.keys(GRAMMAR_LESSONS)){
+    const l = GRAMMAR_LESSONS[k].find(x => x.id === id);
+    if (l) return { lesson:l, topic:k };
+  }
+  return null;
+}
+
+function renderLesson(){
+  const wrap = document.createElement('div');
+  const found = findLesson(state.lessonId);
+  if (!found){ wrap.textContent = 'Урок не знайдено.'; return wrap; }
+  const l = found.lesson;
+
+  if (l.sub){
+    const sub = document.createElement('p');
+    sub.className = 'subtitle';
+    sub.textContent = l.sub;
+    wrap.appendChild(sub);
+  }
+  const topBtn = document.createElement('button');
+  topBtn.className = 'primary-btn';
+  topBtn.textContent = '🧩 Тренувати';
+  topBtn.style.marginBottom = '12px';
+  topBtn.onclick = () => startTrainer(l.title, l.focus, 'lesson');
+  wrap.appendChild(topBtn);
+
+  l.blocks.forEach(b => {
+    const h = document.createElement('div');
+    h.className = 'lesson-h';
+    h.textContent = b.h;
+    wrap.appendChild(h);
+    if (b.p){
+      const p = document.createElement('div');
+      p.className = 'lesson-p';
+      p.textContent = b.p;
+      wrap.appendChild(p);
+    }
+    if (b.list){
+      const ul = document.createElement('ul');
+      ul.className = 'lesson-list';
+      b.list.forEach(t => { const li = document.createElement('li'); li.textContent = t; ul.appendChild(li); });
+      wrap.appendChild(ul);
+    }
+    if (b.ex){
+      b.ex.forEach(e => {
+        const row = document.createElement('div');
+        row.className = 'lesson-ex';
+        row.innerHTML = `<div class="en">${escapeHtml(e[0])}</div><div class="ua">${escapeHtml(e[1])}</div>`;
+        const sp = document.createElement('button');
+        sp.className = 'lesson-speak';
+        sp.textContent = '🔊';
+        sp.onclick = () => speakText(e[0]);
+        row.appendChild(sp);
+        wrap.appendChild(row);
+      });
+    }
+  });
+
+  const bottom = document.createElement('button');
+  bottom.className = 'primary-btn';
+  bottom.style.marginTop = '20px';
+  bottom.textContent = '🧩 Тренувати це правило';
+  bottom.onclick = () => startTrainer(l.title, l.focus, 'lesson');
+  wrap.appendChild(bottom);
+  return wrap;
+}
+
+// ---------- Duolingo-style trainer (Claude generates 5 new sentences) ----------
+const TRAINER_BATCH = 5;
+
+function trNorm(s){
+  return String(s || '').toLowerCase().replace(/[’‘`]/g, "'").replace(/[^a-z0-9'\s-]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+function startTrainer(title, focus, back){
+  state.trainerBack = back;
+  state.trainerTitle = title;
+  state.trainerFocus = focus;
+  goto('lesson-train');
+  loadTrainerBatch();
+}
+
+async function loadTrainerBatch(){
+  state.trainerState = { loading:true, items:[], index:0, score:0, error:null };
+  render();
+  let recentAll = {};
+  try{ recentAll = (await storeGet('trainerRecent')) || {}; }catch(e){}
+  const key = state.trainerTitle;
+  const recent = recentAll[key] || [];
+  const level = state.level || 'A2';
+  const system = "Ти — викладач англійської для україномовного студента. Ти складаєш вправи у стилі Duolingo: переклад з української на англійську складанням речення зі слів.";
+  const prompt = `Тема: ${state.trainerTitle}.\nФокус правила: ${state.trainerFocus}.\nРівень студента: ${level} (речення можуть бути на рівні ${level}, дещо складніші — не більше ніж на рівень вище).\n\nСклади ${TRAINER_BATCH} НОВИХ різних речень, кожне має чітко ілюструвати саме цю тему. Англійське речення: 4–10 слів, природне, без рідкісної лексики. Різні підмети й дієслова. Якщо тема це дозволяє — мікс стверджувальних, заперечних і питальних.\n${recent.length ? 'НЕ повторюй і не перефразовуй ці вже використані речення: ' + recent.slice(-40).join(' | ') + '\n' : ''}\nДля кожного речення дай:\n- "ukrainian": українське речення для перекладу (природне);\n- "english": правильний переклад;\n- "alternatives": масив із 0–2 інших ПОВНІСТЮ правильних англійських варіантів тієї ж граматики (інший порядок слів чи скорочення), якщо вони є;\n- "distractors": масив із 2 зайвих англійських слів, які виглядають правдоподібно, але не підходять (не слова з речення);\n- "explanation": 1–2 короткі речення українською: яке правило тут працює й чому саме така форма.\n\nПоверни ЛИШЕ JSON-масив із ${TRAINER_BATCH} об'єктів, без пояснень і без markdown.`;
+  try{
+    const raw = await askClaude(prompt, system, 2500, "claude-sonnet-4-6");
+    const arr = parseJSONLoose(raw).slice(0, TRAINER_BATCH);
+    const items = arr.map(o => {
+      const english = String(o.english || '').trim().replace(/\s+/g, ' ');
+      const words = english.split(' ');
+      const tokens = words.map((text, id) => ({ id, text }));
+      const dis = (o.distractors || []).slice(0, 2).filter(d => d && !words.some(w => trNorm(w) === trNorm(d)))
+        .map((text, i) => ({ id: words.length + i, text: String(text).toLowerCase() }));
+      const all = [...tokens, ...dis];
+      const orderKey = tokens.map(t => t.id).join();
+      let bank = gameShuffle(all);
+      for (let k = 0; k < 6 && bank.filter(t => t.id < words.length).map(t => t.id).join() === orderKey; k++) bank = gameShuffle(all);
+      const accepted = [english, ...(o.alternatives || [])].map(trNorm);
+      return { ua:o.ukrainian, english, tokens: all, bank, line:[], accepted, explanation:o.explanation || '', checked:null };
+    }).filter(it => it.english && it.ua);
+    if (!items.length) throw new Error('empty');
+    recentAll[key] = [...recent, ...items.map(i => i.english)].slice(-60);
+    try{ await storeSet('trainerRecent', recentAll); }catch(e){}
+    state.trainerState = { loading:false, items, index:0, score:0, error:null };
+  }catch(e){
+    state.trainerState = { loading:false, items:[], index:0, score:0, error:'Не вдалось створити речення. Перевір з\'єднання й спробуй ще раз.' };
+  }
+  render();
+}
+
+function trCheck(){
+  const ts = state.trainerState;
+  const it = ts.items[ts.index];
+  if (it.checked || !it.line.length) return;
+  const answer = trNorm(it.line.map(id => it.tokens.find(t => t.id === id).text).join(' '));
+  const ok = it.accepted.includes(answer);
+  it.checked = { ok };
+  if (ok) ts.score++;
+  logEvent('grammar', ok, state.trainerTitle);
+  render();
+}
+
+function renderTrainer(){
+  const wrap = document.createElement('div');
+  const ts = state.trainerState;
+  if (!ts || ts.loading){
+    const l = document.createElement('div');
+    l.className = 'done-msg';
+    l.textContent = 'Складаю нові речення…';
+    wrap.appendChild(l);
+    return wrap;
+  }
+  if (ts.error){
+    const e = document.createElement('div');
+    e.className = 'feedback-box incorrect';
+    e.textContent = ts.error;
+    wrap.appendChild(e);
+    const retry = document.createElement('button');
+    retry.className = 'primary-btn';
+    retry.style.marginTop = '12px';
+    retry.textContent = 'Спробувати ще раз';
+    retry.onclick = () => loadTrainerBatch();
+    wrap.appendChild(retry);
+    return wrap;
+  }
+  if (ts.index >= ts.items.length){
+    const done = document.createElement('div');
+    done.className = 'done-msg';
+    done.textContent = `Правильно: ${ts.score} з ${ts.items.length} 🎉`;
+    wrap.appendChild(done);
+    const more = document.createElement('button');
+    more.className = 'primary-btn';
+    more.textContent = 'Ще 5 нових речень';
+    more.onclick = () => loadTrainerBatch();
+    wrap.appendChild(more);
+    const back = document.createElement('button');
+    back.className = 'secondary-btn';
+    back.textContent = 'Назад до уроку';
+    back.onclick = () => goto(state.trainerBack || 'reference');
+    wrap.appendChild(back);
+    return wrap;
+  }
+
+  const it = ts.items[ts.index];
+  const progress = document.createElement('div');
+  progress.className = 'progress-line';
+  progress.textContent = `${ts.index + 1} / ${ts.items.length} · ${state.trainerTitle}`;
+  wrap.appendChild(progress);
+
+  const box = document.createElement('div');
+  box.className = 'prompt-box';
+  box.style.margin = '0 0 14px';
+  box.innerHTML = `<div style="color:var(--slate);font-size:13px;margin-bottom:6px;">Переклади англійською</div><div class="ukr">${escapeHtml(it.ua)}</div>`;
+  wrap.appendChild(box);
+
+  const line = document.createElement('div');
+  line.className = 'sb-line';
+  it.line.forEach(id => {
+    const t = it.tokens.find(x => x.id === id);
+    const b = document.createElement('button');
+    b.className = 'sb-tok in-line';
+    b.textContent = t.text;
+    b.disabled = !!it.checked;
+    b.onclick = () => { it.line = it.line.filter(x => x !== id); render(); };
+    line.appendChild(b);
+  });
+  wrap.appendChild(line);
+
+  const bank = document.createElement('div');
+  bank.className = 'sb-bank';
+  it.bank.filter(t => !it.line.includes(t.id)).forEach(t => {
+    const b = document.createElement('button');
+    b.className = 'sb-tok';
+    b.textContent = t.text;
+    b.disabled = !!it.checked;
+    b.onclick = () => { it.line.push(t.id); render(); };
+    bank.appendChild(b);
+  });
+  wrap.appendChild(bank);
+
+  if (!it.checked){
+    const check = document.createElement('button');
+    check.className = 'primary-btn';
+    check.textContent = 'Перевірити';
+    check.disabled = !it.line.length;
+    check.onclick = trCheck;
+    wrap.appendChild(check);
+    if (it.line.length){
+      const reset = document.createElement('button');
+      reset.className = 'secondary-btn';
+      reset.textContent = 'Почати спочатку';
+      reset.onclick = () => { it.line = []; render(); };
+      wrap.appendChild(reset);
+    }
+  } else {
+    const fb = document.createElement('div');
+    fb.className = 'feedback-box ' + (it.checked.ok ? 'correct' : 'incorrect');
+    fb.innerHTML = `<div><strong>${it.checked.ok ? 'Правильно!' : 'Правильна відповідь:'}</strong> ${it.checked.ok ? '' : escapeHtml(it.english)}</div>` + (it.checked.ok ? `<div style="margin-top:4px;font-style:italic;">${escapeHtml(it.english)}</div>` : '') + (it.explanation ? `<div style="margin-top:8px;">${escapeHtml(it.explanation)}</div>` : '');
+    wrap.appendChild(fb);
+    const row = document.createElement('div');
+    row.style.display = 'flex';
+    row.style.gap = '10px';
+    const sp = document.createElement('button');
+    sp.className = 'secondary-btn';
+    sp.textContent = '🔊';
+    sp.style.width = '64px';
+    sp.onclick = () => speakText(it.english);
+    const next = document.createElement('button');
+    next.className = 'primary-btn';
+    next.style.marginTop = '10px';
+    next.textContent = ts.index === ts.items.length - 1 ? 'Результат' : 'Далі';
+    next.onclick = () => { ts.index++; render(); };
+    row.appendChild(sp);
+    row.appendChild(next);
+    wrap.appendChild(row);
   }
   return wrap;
 }
