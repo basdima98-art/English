@@ -663,11 +663,25 @@ try{
 function signInWithGoogle(){
   if (!auth) return;
   const provider = new firebase.auth.GoogleAuthProvider();
-  auth.signInWithRedirect(provider).catch(e => {
+  const fail = e => {
     console.error(e);
-    window.__fbAuthError = (e && e.message) ? e.message : String(e);
+    window.__fbAuthError = ((e && e.code) ? e.code + ': ' : '') + ((e && e.message) ? e.message : String(e));
     render();
-  });
+  };
+  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+  window.__fbAuthError = null;
+  if (isMobile){
+    auth.signInWithRedirect(provider).catch(fail);
+  } else {
+    // на комп'ютері popup працює надійніше (Chrome/Firefox блокують сторонні cookies для redirect)
+    auth.signInWithPopup(provider).catch(e => {
+      if (e && (e.code === 'auth/popup-blocked' || e.code === 'auth/operation-not-supported-in-this-environment')){
+        auth.signInWithRedirect(provider).catch(fail);
+      } else if (e && (e.code === 'auth/popup-closed-by-user' || e.code === 'auth/cancelled-popup-request')){
+        // користувач сам закрив вікно
+      } else fail(e);
+    });
+  }
 }
 function signOutUser(){
   if (!auth) return;
@@ -1003,6 +1017,7 @@ let state = {
   wsEnd: null,
   wsDragging: false,
   wsSetupError: null,
+  dataError: null,
   gamePackIds: [], gameSetupKey: null, gameSetupError: null, hmState: null, sbState: null, smState: null,
 };
 
@@ -1020,10 +1035,14 @@ async function storeGet(key){
     }
     const raw = localStorage.getItem(key);
     return raw ? JSON.parse(raw) : null;
-  }catch(e){ return null; }
+  }catch(e){
+    if (state.user && db) throw e;
+    return null;
+  }
 }
 async function storeSet(key, value){
   try{
+    if (state.user && db && state.dataError) return; // не затирати хмарні дані, якщо їх не вдалось завантажити
     if (state.user && db){
       await db.collection('users').doc(state.user.uid).collection('data').doc(key).set({ value });
       return;
@@ -1054,6 +1073,16 @@ function seedDemoPack(){
 }
 
 async function loadAllData(){
+  state.dataError = null;
+  try{ await loadAllDataInner(); }
+  catch(e){
+    console.error('load error', e);
+    state.dataError = ((e && e.code) ? e.code + ': ' : '') + ((e && e.message) ? e.message : String(e));
+    state.packs = []; state.activityLog = []; state.chatMessages = []; state.verbProgress = {};
+    state.coveredTenses = ["Present Simple","Present Perfect"]; state.level = state.level || 'A2';
+  }
+}
+async function loadAllDataInner(){
   const packs = await storeGet('packs');
   const tenses = await storeGet('coveredTenses');
   const theme = await storeGet('theme');
@@ -1080,9 +1109,12 @@ async function init(){
       console.error('Redirect result error', e);
       window.__fbAuthError = (e && e.message) ? e.message : String(e);
     });
+    let loadSeq = 0;
     auth.onAuthStateChanged(async (user) => {
+      const my = ++loadSeq;
       state.user = user;
       await loadAllData();
+      if (my !== loadSeq) return;
       render();
     });
   } else {
@@ -1236,6 +1268,13 @@ function render(){
   const app = document.getElementById('app');
   app.innerHTML = '';
   app.appendChild(renderTopbar());
+  if (state.dataError){
+    const ban = document.createElement('div');
+    ban.className = 'feedback-box incorrect';
+    ban.style.margin = '12px 16px 0';
+    ban.textContent = 'Не вдалось завантажити твої дані з хмари (нічого не видалено, нові зміни не зберігаються, щоб не перезаписати їх). Причина: ' + state.dataError;
+    app.appendChild(ban);
+  }
   const main = document.createElement('main');
   if (state.route === 'chat') main.style.paddingBottom = '150px';
   main.appendChild(renderScreen());
