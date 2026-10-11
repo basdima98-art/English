@@ -376,7 +376,7 @@
     border:none;
     color:var(--slate);
     font-family:'IBM Plex Sans', sans-serif;
-    font-size:12.5px;
+    font-size:11px;
     display:flex;
     flex-direction:column;
     align-items:center;
@@ -567,6 +567,73 @@
     font-size:15px;
     margin-bottom:12px;
   }
+  .pack-check-row{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    background:var(--ink-2);
+    border:1px solid var(--line);
+    border-radius:var(--radius-ui);
+    padding:12px 14px;
+    margin-bottom:8px;
+    cursor:pointer;
+  }
+  .pack-check-row .box{
+    width:20px; height:20px; border-radius:5px; border:2px solid var(--line);
+    display:flex; align-items:center; justify-content:center; flex-shrink:0; font-size:13px;
+  }
+  .pack-check-row.checked .box{ background:var(--sage); border-color:var(--sage); color:var(--cream-text); }
+  .ws-words{ display:flex; flex-wrap:wrap; gap:8px; margin-bottom:4px; }
+  .ws-word-chip{
+    padding:6px 13px;
+    border-radius:16px;
+    border:1px solid var(--line);
+    font-size:12.5px;
+    color:var(--cream-text);
+    font-family:'IBM Plex Sans',sans-serif;
+  }
+  .ws-word-chip.found{ text-decoration:line-through; opacity:0.55; background:var(--sage); border-color:var(--sage); }
+  .ws-grid{
+    display:grid;
+    gap:3px;
+    background:var(--paper-2);
+    border-radius:var(--radius-card);
+    padding:8px;
+    margin:16px 0;
+    touch-action:none;
+    user-select:none;
+    box-shadow:0 4px 0 rgba(0,0,0,0.18);
+  }
+  .ws-cell{
+    aspect-ratio:1/1;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    background:var(--paper);
+    color:var(--dark-text);
+    font-family:'IBM Plex Sans',sans-serif;
+    font-weight:600;
+    font-size:clamp(9px,3.4vw,15px);
+    border-radius:4px;
+  }
+  .ws-cell.selected{ background:var(--rust); color:var(--cream-text); }
+  .ws-cell.found{ background:var(--sage); color:var(--cream-text); }
+
+  .hm-lives{ text-align:center; font-size:18px; letter-spacing:3px; margin-bottom:12px; }
+  .hm-word{ display:flex; flex-wrap:wrap; justify-content:center; gap:6px; margin:18px 0; }
+  .hm-letter{ width:30px; height:38px; border-bottom:3px solid var(--slate); display:flex; align-items:center; justify-content:center; font-family:'IBM Plex Serif',serif; font-size:22px; }
+  .hm-letter.revealed-miss{ color:var(--rust); }
+  .kb-grid{ display:grid; grid-template-columns:repeat(7,1fr); gap:6px; margin:10px 0; }
+  .kb-key{ padding:10px 0; border-radius:8px; border:1px solid var(--line); background:var(--card, transparent); color:inherit; font-family:'IBM Plex Sans',sans-serif; font-size:15px; cursor:pointer; }
+  .kb-key.hit{ background:rgba(76,122,94,0.35); border-color:var(--sage); }
+  .kb-key.miss{ opacity:0.35; }
+  .kb-key:disabled{ cursor:default; }
+  .sb-line{ min-height:60px; border:1.5px dashed var(--line); border-radius:12px; padding:10px; display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px; }
+  .sb-bank{ display:flex; flex-wrap:wrap; gap:8px; margin-bottom:18px; }
+  .sb-tok{ padding:9px 13px; border-radius:10px; border:1px solid var(--line); background:var(--card, transparent); color:inherit; font-family:'IBM Plex Sans',sans-serif; font-size:15px; cursor:pointer; }
+  .sb-tok.in-line{ border-color:var(--sage); }
+  .sm-hud{ display:flex; justify-content:space-between; font-size:18px; font-weight:600; margin-bottom:14px; }
+  .sm-timer.low{ color:var(--rust); }
 </style>
 </head>
 <body>
@@ -779,6 +846,100 @@ const PHRASALS_QUIZ = [
   { prompt:"Please don't ___ your homework. (відкладати)", options:["put off","get along","figure out","bring up"], correct:"put off", explanation:"put off = відкладати." },
 ];
 
+// ==== WORD SEARCH (Філворд) ====
+const WS_DIR_VECTORS = {
+  right:[0,1], left:[0,-1], down:[1,0], up:[-1,0],
+  downright:[1,1], downleft:[1,-1], upright:[-1,1], upleft:[-1,-1]
+};
+const WS_DIFFICULTY = {
+  easy:   { size:8,  wordCount:6,  directions:['right','down'], label:'Легко' },
+  medium: { size:10, wordCount:10, directions:['right','down','left','up'], label:'Середньо' },
+  hard:   { size:13, wordCount:15, directions:['right','down','left','up','downright','downleft','upright','upleft'], label:'Складно' },
+};
+
+function pickWordsForSearch(packIds, count, maxLen){
+  const eligible = {};
+  packIds.forEach(pid => {
+    const pack = state.packs.find(p => p.id === pid);
+    if (!pack) return;
+    eligible[pid] = pack.words
+      .filter(w => /^[A-Za-z]+$/.test(w.word) && w.word.length >= 3 && w.word.length <= maxLen)
+      .map(w => w.word)
+      .sort(() => Math.random() - 0.5);
+  });
+  const n = packIds.length;
+  if (!n) return [];
+  const per = Math.floor(count / n);
+  const taken = {};
+  const result = [];
+  packIds.forEach(pid => {
+    const list = eligible[pid] || [];
+    const take = list.slice(0, per);
+    taken[pid] = take.length;
+    result.push(...take);
+  });
+  let remaining = count - result.length;
+  if (remaining > 0){
+    const leftover = [];
+    packIds.forEach(pid => { leftover.push(...(eligible[pid] || []).slice(taken[pid] || 0)); });
+    leftover.sort(() => Math.random() - 0.5);
+    result.push(...leftover.slice(0, remaining));
+  }
+  const unique = [...new Set(result.map(w => w.toUpperCase()))];
+  return unique.sort(() => Math.random() - 0.5).slice(0, count);
+}
+
+function generateWordSearch(words, size, directions){
+  const grid = Array.from({ length:size }, () => Array(size).fill(null));
+  const placed = [];
+  const sorted = [...words].sort((a,b) => b.length - a.length);
+  sorted.forEach(word => {
+    const w = word.toUpperCase();
+    const len = w.length;
+    let success = false;
+    for (let attempt = 0; attempt < 200 && !success; attempt++){
+      const dirKey = directions[Math.floor(Math.random() * directions.length)];
+      const [dr, dc] = WS_DIR_VECTORS[dirKey];
+      const rEnd = dr * (len - 1);
+      const cEnd = dc * (len - 1);
+      const rLow = rEnd < 0 ? -rEnd : 0;
+      const rHigh = rEnd < 0 ? size - 1 : size - 1 - rEnd;
+      const cLow = cEnd < 0 ? -cEnd : 0;
+      const cHigh = cEnd < 0 ? size - 1 : size - 1 - cEnd;
+      if (rHigh < rLow || cHigh < cLow) continue;
+      const r0 = rLow + Math.floor(Math.random() * (rHigh - rLow + 1));
+      const c0 = cLow + Math.floor(Math.random() * (cHigh - cLow + 1));
+      let fits = true;
+      const path = [];
+      for (let i = 0; i < len; i++){
+        const r = r0 + dr * i, c = c0 + dc * i;
+        const existing = grid[r][c];
+        if (existing && existing !== w[i]){ fits = false; break; }
+        path.push({ r, c });
+      }
+      if (!fits) continue;
+      path.forEach((p, i) => { grid[p.r][p.c] = w[i]; });
+      placed.push({ word:w, path, pathKey: path.map(p => p.r+','+p.c).join('|'), found:false });
+      success = true;
+    }
+  });
+  const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  for (let r=0; r<size; r++) for (let c=0; c<size; c++) if (!grid[r][c]) grid[r][c] = letters[Math.floor(Math.random()*letters.length)];
+  return { grid, placed };
+}
+
+function wsComputePath(r0, c0, r1, c1){
+  const dr = r1 - r0, dc = c1 - c0;
+  if (dr === 0 && dc === 0) return [{ r:r0, c:c0 }];
+  if (!(dr === 0 || dc === 0 || Math.abs(dr) === Math.abs(dc))) return [{ r:r0, c:c0 }];
+  const stepR = dr === 0 ? 0 : dr / Math.abs(dr);
+  const stepC = dc === 0 ? 0 : dc / Math.abs(dc);
+  const len = Math.max(Math.abs(dr), Math.abs(dc));
+  const path = [];
+  for (let i=0; i<=len; i++) path.push({ r:r0+stepR*i, c:c0+stepC*i });
+  return path;
+}
+
 const REFERENCE_SECTIONS = {
   modals: { title:'Модальні дієслова', data:MODAL_VERBS, map:m=>({title:m.verb, meta:m.meaning, ex:m.example}), quiz:MODALS_QUIZ },
   articles: { title:'Артиклі', data:ARTICLES_RULES, map:a=>({title:a.rule, meta:a.note, ex:a.example}), quiz:ARTICLES_QUIZ },
@@ -833,6 +994,16 @@ let state = {
   grammarQuizState: null,
   grammarQuizBack: null,
   progressAnalysis: null,
+  wsSelectedPackIds: [],
+  wsDifficulty: 'medium',
+  wsSize: 10,
+  wsGrid: [],
+  wsWords: [],
+  wsStart: null,
+  wsEnd: null,
+  wsDragging: false,
+  wsSetupError: null,
+  gamePackIds: [], gameSetupKey: null, gameSetupError: null, hmState: null, sbState: null, smState: null,
 };
 
 function uid(){ return Math.random().toString(36).slice(2) + Date.now().toString(36); }
@@ -1069,7 +1240,7 @@ function render(){
   if (state.route === 'chat') main.style.paddingBottom = '150px';
   main.appendChild(renderScreen());
   app.appendChild(main);
-  if (['home','add','progress','chat','reference'].includes(state.route)){
+  if (['home','add','games','progress','chat','reference'].includes(state.route)){
     app.appendChild(renderBottomNav());
   }
   if (state.route === 'chat'){
@@ -1097,6 +1268,13 @@ function renderTopbar(){
     conditionals: ['Умовні речення', null],
     phrasals: ['Фразові дієслова', null],
     grammarquiz: ['Тренування', null],
+    'wordsearch-setup': ['Філворд', 'Обери пакети й складність'],
+    games: ['Ігри', 'Вчись граючи'],
+    'game-setup': [(GAME_META[state.gameSetupKey]||{}).title || 'Гра', 'Обери пакети'],
+    'hangman-play': ['Шибениця', ''],
+    'builder-play': ['Склади речення', ''],
+    'speed-play': ['Speed Match', ''],
+    'wordsearch-play': ['Філворд', null],
     pack: [currentPack()?.name || '', 'Обери формат практики'],
     cards: [currentPack()?.name || '', null],
     write: [currentPack()?.name || '', 'Написання'],
@@ -1110,11 +1288,11 @@ function renderTopbar(){
   const [title, sub] = titles[state.route] || ['', null];
   const left = document.createElement('div');
   left.className = 'topbar-left';
-  if (!['home','add','progress','chat','reference'].includes(state.route)){
+  if (!['home','add','games','progress','chat','reference'].includes(state.route)){
     const back = document.createElement('button');
     back.className = 'back-btn';
     back.textContent = '←';
-    const backTargets = { pack:'home', verbs:'reference', modals:'reference', articles:'reference', preps:'reference', tenses:'reference', conditionals:'reference', phrasals:'reference', verbtrain:'verbs', grammarquiz: state.grammarQuizBack || 'reference' };
+    const backTargets = { pack:'home', verbs:'reference', modals:'reference', articles:'reference', preps:'reference', tenses:'reference', conditionals:'reference', phrasals:'reference', verbtrain:'verbs', grammarquiz: state.grammarQuizBack || 'reference', 'wordsearch-setup':'games', 'wordsearch-play':'wordsearch-setup', 'game-setup':'games', 'hangman-play':'game-setup', 'builder-play':'game-setup', 'speed-play':'game-setup' };
     back.onclick = () => goto(backTargets[state.route] || 'pack', { confirmDeletePack:false });
     left.appendChild(back);
   }
@@ -1153,6 +1331,13 @@ function renderScreen(){
     case 'conditionals': return renderStaticList('conditionals');
     case 'phrasals': return renderStaticList('phrasals');
     case 'grammarquiz': return renderGrammarQuiz();
+    case 'games': return renderGames();
+    case 'game-setup': return renderGameSetup();
+    case 'hangman-play': return renderHangman();
+    case 'builder-play': return renderBuilder();
+    case 'speed-play': return renderSpeed();
+    case 'wordsearch-setup': return renderWordSearchSetup();
+    case 'wordsearch-play': return renderWordSearchPlay();
     case 'pack': return renderPackModes();
     case 'cards': return renderCards();
     case 'write': return renderWrite();
@@ -1175,6 +1360,7 @@ function renderHome(){
     wrap.appendChild(empty);
     return wrap;
   }
+
   state.packs.forEach(pack => {
     const item = document.createElement('div');
     item.className = 'pack-item';
@@ -1987,7 +2173,7 @@ async function loadSentenceBatch(){
   const level = state.level || 'A2';
   const harderLevel = nextLevelUp(level);
   const system = "Ти — викладач англійської для україномовного студента. Ти складаєш вправи на переклад речення з української на англійську.";
-  const prompt = `Рівень студента: ${level}. Дозволені часові форми: ${tenses.join(", ")}.\nСлова з пакету: ${words.join(", ")}.\n\nСклади ${SENTENCE_BATCH_SIZE} РІЗНИХ речень українською мовою, переклад яких англійською вимагає однієї з дозволених часових форм. Постарайся використати слова зі списку (різні слова в різних реченнях, у потрібній формі). Приблизно 60-70% речень має відповідати рівню ${level}, а 30-40% — навмисно трохи складніші, рівня ${harderLevel} (складніша лексика чи структура), щоб студент прогресував швидше. Поверни ЛИШЕ JSON-масив з ${SENTENCE_BATCH_SIZE} об'єктів формату {"ukrainian":"...", "expected_tense":"...", "target_word":"...", "level":"A2 або B1 тощо"} без пояснень.`;
+  const prompt = `Рівень студента: ${level}. Дозволені часові форми: ${tenses.join(", ")}.\nСлова з пакету: ${words.join(", ")}.\n\nСклади ${SENTENCE_BATCH_SIZE} РІЗНИХ речень українською мовою, переклад яких англійською вимагає однієї з дозволених часових форм. Постарайся використати слова зі списку (різні слова в різних реченнях, у потрібній формі). Приблизно 60-70% речень має відповідати рівню ${level}, а 30-40% — навмисно трохи складніші, рівня ${harderLevel} (складніша лексика чи структура), щоб студент прогресував швидше.\n\nВАЖЛИВО: розподіли речення приблизно порівну між трьома формами — стверджувальні (affirmative), заперечні (negative) і питальні (question) — так, щоб студент практикував побудову всіх трьох форм у кожному часі. Сформулюй українське речення так, щоб було природно перекласти саме в потрібній формі (наприклад, для заперечення — "Я не..." / "Вона ще не...", для питання — прямо постав питання).\n\nПоверни ЛИШЕ JSON-масив з ${SENTENCE_BATCH_SIZE} об'єктів формату {"ukrainian":"...", "expected_tense":"...", "target_word":"...", "form":"affirmative або negative або question", "level":"A2 або B1 тощо"} без пояснень.`;
   try{
     const raw = await askClaude(prompt, system, 3000, "claude-sonnet-4-6");
     const items = parseJSONLoose(raw);
@@ -2006,10 +2192,11 @@ async function checkSentenceBatch(){
   const payload = ss.items.map((it, i) => ({
     ukrainian: it.ukrainian,
     expected_tense: it.expected_tense,
+    expected_form: it.form,
     target_word: it.target_word,
     student_answer: ss.answers[i]
   }));
-  const prompt = `Ось ${payload.length} речень з відповідями студента у форматі JSON:\n${JSON.stringify(payload)}\n\nПеревір КОЖНЕ речення окремо. Поверни ЛИШЕ JSON-масив з ${payload.length} об'єктів у ТОМУ Ж ПОРЯДКУ, формату {"correct": true/false, "feedback":"розмовне пояснення українською чому правильно чи неправильно", "tense_note":"яку саме часову форму треба застосувати в цьому реченні і чому саме її (коротко, українською)", "corrected":"виправлений варіант, якщо є помилки, інакше порожній рядок"}.`;
+  const prompt = `Ось ${payload.length} речень з відповідями студента у форматі JSON:\n${JSON.stringify(payload)}\n\nПеревір КОЖНЕ речення окремо — і часову форму, і структуру (affirmative/negative/question відповідно до expected_form). Поверни ЛИШЕ JSON-масив з ${payload.length} об'єктів у ТОМУ Ж ПОРЯДКУ, формату {"correct": true/false, "feedback":"розмовне пояснення українською чому правильно чи неправильно (враховуючи і час, і структуру)", "tense_note":"яку саме часову форму і яку структуру (стверджувальну/заперечну/питальну) треба застосувати в цьому реченні і чому саме їх (коротко, українською)", "corrected":"виправлений варіант, якщо є помилки, інакше порожній рядок"}.`;
   try{
     const raw = await askClaude(prompt, system, 3000, "claude-sonnet-4-6");
     ss.results = parseJSONLoose(raw);
@@ -2091,9 +2278,12 @@ function renderSentence(){
   progress.textContent = `${idx + 1} / ${ss.items.length}`;
   wrap.appendChild(progress);
 
+  const formLabels = { affirmative:'Стверджувальне речення', negative:'Заперечне речення', question:'Питальне речення' };
+  const formLabel = formLabels[item.form] || '';
+
   const box = document.createElement('div');
   box.className = 'prompt-box';
-  box.innerHTML = `<div class="ukr">${escapeHtml(item.ukrainian)}</div>`;
+  box.innerHTML = (formLabel ? `<div class="chip active" style="display:inline-block;margin-bottom:10px;">${escapeHtml(formLabel)}</div>` : '') + `<div class="ukr">${escapeHtml(item.ukrainian)}</div>`;
   wrap.appendChild(box);
 
   const input = document.createElement('input');
@@ -2469,6 +2659,716 @@ async function requestProgressAnalysis(){
   render();
 }
 
+// ---------- Word search (Філворд) ----------
+function renderWordSearchSetup(){
+  const wrap = document.createElement('div');
+
+  const label1 = document.createElement('label');
+  label1.className = 'field-label';
+  label1.textContent = 'Обери один чи кілька пакетів';
+  wrap.appendChild(label1);
+
+  state.packs.forEach(pack => {
+    const checked = state.wsSelectedPackIds.includes(pack.id);
+    const row = document.createElement('div');
+    row.className = 'pack-check-row' + (checked ? ' checked' : '');
+    row.innerHTML = `<div class="box">${checked ? '✓' : ''}</div><div>${escapeHtml(pack.name)} <span style="color:var(--slate);font-size:12.5px;">(${pack.words.length})</span></div>`;
+    row.onclick = () => {
+      if (state.wsSelectedPackIds.includes(pack.id)){
+        state.wsSelectedPackIds = state.wsSelectedPackIds.filter(id => id !== pack.id);
+      } else {
+        state.wsSelectedPackIds = [...state.wsSelectedPackIds, pack.id];
+      }
+      render();
+    };
+    wrap.appendChild(row);
+  });
+
+  const label2 = document.createElement('label');
+  label2.className = 'field-label';
+  label2.textContent = 'Складність';
+  wrap.appendChild(label2);
+  const diffGrid = document.createElement('div');
+  diffGrid.className = 'tense-grid';
+  Object.keys(WS_DIFFICULTY).forEach(key => {
+    const d = WS_DIFFICULTY[key];
+    const chip = document.createElement('div');
+    chip.className = 'chip' + (state.wsDifficulty === key ? ' active' : '');
+    chip.textContent = `${d.label} (${d.size}×${d.size}, ${d.wordCount} слів)`;
+    chip.onclick = () => { state.wsDifficulty = key; render(); };
+    diffGrid.appendChild(chip);
+  });
+  wrap.appendChild(diffGrid);
+
+  const btn = document.createElement('button');
+  btn.className = 'primary-btn';
+  btn.style.marginTop = '20px';
+  btn.textContent = '🔤 Почати гру';
+  btn.onclick = () => startWordSearch();
+  wrap.appendChild(btn);
+
+  if (state.wsSetupError){
+    const err = document.createElement('div');
+    err.className = 'feedback-box incorrect';
+    err.style.marginTop = '14px';
+    err.textContent = state.wsSetupError;
+    wrap.appendChild(err);
+  }
+  return wrap;
+}
+
+function startWordSearch(){
+  if (!state.wsSelectedPackIds.length){
+    state.wsSetupError = 'Обери хоча б один пакет.';
+    render();
+    return;
+  }
+  const d = WS_DIFFICULTY[state.wsDifficulty];
+  const words = pickWordsForSearch(state.wsSelectedPackIds, d.wordCount, d.size);
+  if (words.length < 3){
+    state.wsSetupError = 'У обраних пакетах замало придатних слів (3–' + d.size + ' літер, без пробілів). Додай слова або обери інший пакет.';
+    render();
+    return;
+  }
+  state.wsSetupError = null;
+  const { grid, placed } = generateWordSearch(words, d.size, d.directions);
+  state.wsSize = d.size;
+  state.wsGrid = grid;
+  state.wsWords = placed;
+  state.wsStart = null;
+  state.wsEnd = null;
+  state.wsDragging = false;
+  goto('wordsearch-play');
+}
+
+function renderWordSearchPlay(){
+  const wrap = document.createElement('div');
+
+  const wordsRow = document.createElement('div');
+  wordsRow.className = 'ws-words';
+  state.wsWords.forEach(w => {
+    const chip = document.createElement('div');
+    chip.className = 'ws-word-chip' + (w.found ? ' found' : '');
+    chip.textContent = w.word;
+    wordsRow.appendChild(chip);
+  });
+  wrap.appendChild(wordsRow);
+
+  const allFound = state.wsWords.every(w => w.found);
+  if (allFound){
+    const done = document.createElement('div');
+    done.className = 'done-msg';
+    done.textContent = `Усі ${state.wsWords.length} слів знайдено 🎉`;
+    wrap.appendChild(done);
+    const again = document.createElement('button');
+    again.className = 'primary-btn';
+    again.textContent = 'Нова гра (ті ж налаштування)';
+    again.onclick = () => startWordSearch();
+    wrap.appendChild(again);
+    return wrap;
+  }
+
+  const gridEl = document.createElement('div');
+  gridEl.className = 'ws-grid';
+  gridEl.style.gridTemplateColumns = `repeat(${state.wsSize}, 1fr)`;
+  const cellEls = [];
+
+  function refreshSelection(){
+    cellEls.forEach(el => el.classList.remove('selected'));
+    if (!state.wsStart || !state.wsEnd) return;
+    const path = wsComputePath(state.wsStart.r, state.wsStart.c, state.wsEnd.r, state.wsEnd.c);
+    path.forEach(p => {
+      const idx = p.r * state.wsSize + p.c;
+      if (cellEls[idx]) cellEls[idx].classList.add('selected');
+    });
+  }
+
+  function finishDrag(){
+    if (!state.wsDragging) return;
+    state.wsDragging = false;
+    const path = wsComputePath(state.wsStart.r, state.wsStart.c, state.wsEnd.r, state.wsEnd.c);
+    const key = path.map(p => p.r+','+p.c).join('|');
+    const keyRev = [...path].reverse().map(p => p.r+','+p.c).join('|');
+    const match = state.wsWords.find(w => !w.found && (w.pathKey === key || w.pathKey === keyRev));
+    if (match){
+      match.found = true;
+      logEvent('wordsearch', true, match.word);
+    }
+    state.wsStart = null;
+    state.wsEnd = null;
+    render();
+  }
+
+  for (let r=0; r<state.wsSize; r++){
+    for (let c=0; c<state.wsSize; c++){
+      const cell = document.createElement('div');
+      cell.className = 'ws-cell';
+      cell.textContent = state.wsGrid[r][c];
+      cell.onpointerdown = (e) => {
+        e.preventDefault();
+        state.wsDragging = true;
+        state.wsStart = { r, c };
+        state.wsEnd = { r, c };
+        refreshSelection();
+        window.addEventListener('pointerup', finishDrag, { once:true });
+      };
+      cellEls.push(cell);
+      gridEl.appendChild(cell);
+    }
+  }
+
+  gridEl.onpointermove = (e) => {
+    if (!state.wsDragging) return;
+    const touch = e.touches ? e.touches[0] : e;
+    const el = document.elementFromPoint(touch.clientX, touch.clientY);
+    const idx = cellEls.indexOf(el);
+    if (idx === -1) return;
+    const r = Math.floor(idx / state.wsSize), c = idx % state.wsSize;
+    state.wsEnd = { r, c };
+    refreshSelection();
+  };
+
+  // mark already-found words' cells
+  state.wsWords.filter(w => w.found).forEach(w => {
+    w.path.forEach(p => {
+      const idx = p.r * state.wsSize + p.c;
+      if (cellEls[idx]) cellEls[idx].classList.add('found');
+    });
+  });
+
+  wrap.appendChild(gridEl);
+
+  const hint = document.createElement('div');
+  hint.className = 'flip-hint';
+  hint.textContent = 'Проведи пальцем по літерах, щоб виділити слово';
+  wrap.appendChild(hint);
+
+  return wrap;
+}
+
+// ---------- Games tab ----------
+const GAME_META = {
+  hangman: { icon:'❓', title:'Шибениця', desc:'Вгадуй слово за літерами — підказка українською' },
+  builder: { icon:'🧩', title:'Склади речення', desc:'Розстав слова з прикладу в правильному порядку' },
+  speed:   { icon:'⚡', title:'Speed Match', desc:'60 секунд: обирай переклад якнайшвидше' },
+};
+
+function gameShuffle(arr){
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--){
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function gamePool(){
+  return state.packs.filter(p => state.gamePackIds.includes(p.id)).flatMap(p => p.words);
+}
+
+function renderGames(){
+  const wrap = document.createElement('div');
+  if (!state.packs.length){
+    const empty = document.createElement('div');
+    empty.className = 'empty-state';
+    empty.textContent = 'Спершу додай хоча б один пакет слів на вкладці «Слова» — ігри будуються з твоїх слів.';
+    wrap.appendChild(empty);
+    return wrap;
+  }
+  const list = document.createElement('div');
+  list.className = 'mode-list';
+  const cards = [
+    { key:'wordsearch', icon:'🔤', title:'Філворд', desc:'Знайди слова в сітці літер — можна з кількох пакетів одразу' },
+    ...Object.keys(GAME_META).map(k => ({ key:k, ...GAME_META[k] })),
+  ];
+  cards.forEach(c => {
+    const item = document.createElement('div');
+    item.className = 'mode-item';
+    item.innerHTML = `<div class="title">${c.icon} ${escapeHtml(c.title)}</div><div class="desc">${escapeHtml(c.desc)}</div>`;
+    item.onclick = () => {
+      if (c.key === 'wordsearch'){
+        if (!state.wsSelectedPackIds.length) state.wsSelectedPackIds = state.packs.map(p => p.id);
+        goto('wordsearch-setup');
+      } else {
+        startGameSetup(c.key);
+      }
+    };
+    list.appendChild(item);
+  });
+  wrap.appendChild(list);
+  return wrap;
+}
+
+function startGameSetup(key){
+  state.gameSetupKey = key;
+  state.gamePackIds = state.gamePackIds.filter(id => state.packs.some(p => p.id === id));
+  if (!state.gamePackIds.length) state.gamePackIds = state.packs.map(p => p.id);
+  state.gameSetupError = null;
+  goto('game-setup');
+}
+
+function renderGameSetup(){
+  const wrap = document.createElement('div');
+  const meta = GAME_META[state.gameSetupKey] || {};
+
+  const intro = document.createElement('p');
+  intro.className = 'subtitle';
+  intro.textContent = meta.desc || '';
+  wrap.appendChild(intro);
+
+  const label = document.createElement('label');
+  label.className = 'field-label';
+  label.textContent = 'Обери один чи кілька пакетів';
+  wrap.appendChild(label);
+
+  state.packs.forEach(pack => {
+    const checked = state.gamePackIds.includes(pack.id);
+    const row = document.createElement('div');
+    row.className = 'pack-check-row' + (checked ? ' checked' : '');
+    row.innerHTML = `<div class="box">${checked ? '✓' : ''}</div><div>${escapeHtml(pack.name)} <span style="color:var(--slate);font-size:12.5px;">(${pack.words.length})</span></div>`;
+    row.onclick = () => {
+      state.gamePackIds = checked
+        ? state.gamePackIds.filter(id => id !== pack.id)
+        : [...state.gamePackIds, pack.id];
+      render();
+    };
+    wrap.appendChild(row);
+  });
+
+  const btn = document.createElement('button');
+  btn.className = 'primary-btn';
+  btn.style.marginTop = '20px';
+  btn.textContent = 'Почати гру';
+  btn.onclick = () => startGame();
+  wrap.appendChild(btn);
+
+  if (state.gameSetupError){
+    const err = document.createElement('div');
+    err.className = 'feedback-box incorrect';
+    err.style.marginTop = '14px';
+    err.textContent = state.gameSetupError;
+    wrap.appendChild(err);
+  }
+  return wrap;
+}
+
+async function startGame(){
+  const key = state.gameSetupKey;
+  if (!state.gamePackIds.length){
+    state.gameSetupError = 'Обери хоча б один пакет.';
+    render();
+    return;
+  }
+  state.gameSetupError = null;
+  if (key === 'hangman') startHangman();
+  else if (key === 'builder') startBuilder();
+  else if (key === 'speed') await startSpeed();
+}
+
+// ---------- Hangman ----------
+const HM_LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+
+function startHangman(){
+  const pool = gamePool().filter(w => /^[A-Za-z]+$/.test(w.word) && w.word.length >= 3 && w.word.length <= 12);
+  if (!pool.length){
+    state.gameSetupError = 'У обраних пакетах немає придатних слів (3–12 літер, без пробілів і дефісів).';
+    render();
+    return;
+  }
+  state.hmState = { queue: gameShuffle(pool).slice(0, 10), index: 0, guessed: [], lives: 6, wins: 0 };
+  goto('hangman-play');
+}
+
+function hmStatus(hm){
+  const word = hm.queue[hm.index].word.toUpperCase();
+  const won = word.split('').every(ch => hm.guessed.includes(ch));
+  const lost = hm.lives <= 0;
+  return { word, won, lost, over: won || lost };
+}
+
+function hmGuess(letter){
+  const hm = state.hmState;
+  if (hm.guessed.includes(letter)) return;
+  const before = hmStatus(hm);
+  if (before.over) return;
+  hm.guessed.push(letter);
+  if (!before.word.includes(letter)) hm.lives--;
+  const after = hmStatus(hm);
+  if (after.over){
+    if (after.won) hm.wins++;
+    logEvent('game', after.won, 'hangman');
+  }
+  render();
+}
+
+function renderHangman(){
+  const wrap = document.createElement('div');
+  const hm = state.hmState;
+  if (!hm) return wrap;
+
+  if (hm.index >= hm.queue.length){
+    const done = document.createElement('div');
+    done.className = 'done-msg';
+    done.textContent = `Вгадано ${hm.wins} з ${hm.queue.length} 🎉`;
+    wrap.appendChild(done);
+    const again = document.createElement('button');
+    again.className = 'primary-btn';
+    again.textContent = 'Зіграти ще раз';
+    again.onclick = () => startHangman();
+    wrap.appendChild(again);
+    return wrap;
+  }
+
+  const item = hm.queue[hm.index];
+  const st = hmStatus(hm);
+
+  const progress = document.createElement('div');
+  progress.className = 'progress-line';
+  progress.textContent = `${hm.index + 1} / ${hm.queue.length}`;
+  wrap.appendChild(progress);
+
+  const lives = document.createElement('div');
+  lives.className = 'hm-lives';
+  lives.textContent = '❤️'.repeat(Math.max(hm.lives, 0)) + '🖤'.repeat(6 - Math.max(hm.lives, 0));
+  wrap.appendChild(lives);
+
+  const box = document.createElement('div');
+  box.className = 'prompt-box';
+  box.style.margin = '0 0 4px';
+  box.innerHTML = `<div class="ukr">${escapeHtml(item.translation)}</div>`;
+  wrap.appendChild(box);
+
+  const wordEl = document.createElement('div');
+  wordEl.className = 'hm-word';
+  st.word.split('').forEach(ch => {
+    const l = document.createElement('div');
+    const guessed = hm.guessed.includes(ch);
+    l.className = 'hm-letter' + (!guessed && st.lost ? ' revealed-miss' : '');
+    l.textContent = guessed || st.lost ? ch : '';
+    wordEl.appendChild(l);
+  });
+  wrap.appendChild(wordEl);
+
+  const kb = document.createElement('div');
+  kb.className = 'kb-grid';
+  HM_LETTERS.forEach(letter => {
+    const key = document.createElement('button');
+    key.className = 'kb-key';
+    const used = hm.guessed.includes(letter);
+    if (used) key.classList.add(st.word.includes(letter) ? 'hit' : 'miss');
+    key.disabled = used || st.over;
+    key.textContent = letter;
+    key.onclick = () => hmGuess(letter);
+    kb.appendChild(key);
+  });
+  wrap.appendChild(kb);
+
+  if (st.over){
+    const fb = document.createElement('div');
+    fb.className = 'feedback-box ' + (st.won ? 'correct' : 'incorrect');
+    fb.textContent = st.won ? `Правильно! ${item.word}` : `Слово було: ${item.word}`;
+    if (item.example){
+      const ex = document.createElement('div');
+      ex.style.marginTop = '6px';
+      ex.style.fontStyle = 'italic';
+      ex.textContent = item.example;
+      fb.appendChild(ex);
+    }
+    wrap.appendChild(fb);
+
+    const row = document.createElement('div');
+    row.style.display = 'flex';
+    row.style.gap = '10px';
+    const speak = document.createElement('button');
+    speak.className = 'secondary-btn';
+    speak.textContent = '🔊';
+    speak.style.width = '64px';
+    speak.onclick = () => speakText(item.word);
+    const next = document.createElement('button');
+    next.className = 'primary-btn';
+    next.style.marginTop = '10px';
+    next.textContent = hm.index === hm.queue.length - 1 ? 'Результат' : 'Наступне слово';
+    next.onclick = () => { hm.index++; hm.guessed = []; hm.lives = 6; render(); };
+    row.appendChild(speak);
+    row.appendChild(next);
+    wrap.appendChild(row);
+  }
+  return wrap;
+}
+
+// ---------- Sentence builder ----------
+function startBuilder(){
+  const pool = gamePool().filter(w => {
+    if (!w.example) return false;
+    const n = w.example.trim().split(/\s+/).length;
+    return n >= 3 && n <= 14;
+  });
+  if (!pool.length){
+    state.gameSetupError = 'У обраних пакетах немає прикладів речень довжиною 3–14 слів.';
+    render();
+    return;
+  }
+  const items = gameShuffle(pool).slice(0, 10).map(w => {
+    const example = w.example.trim().split(/\s+/).join(' ');
+    const tokens = example.split(' ').map((text, id) => ({ id, text }));
+    const orderKey = tokens.map(t => t.id).join();
+    let bank = gameShuffle(tokens);
+    for (let k = 0; k < 6 && bank.map(t => t.id).join() === orderKey; k++) bank = gameShuffle(tokens);
+    return { word: w.word, translation: w.translation, example, tokens, bank, line: [], checked: null };
+  });
+  state.sbState = { items, index: 0, score: 0 };
+  goto('builder-play');
+}
+
+function sbCheck(){
+  const item = state.sbState.items[state.sbState.index];
+  if (item.checked || item.line.length !== item.tokens.length) return;
+  const answer = item.line.map(id => item.tokens[id].text).join(' ');
+  const correct = answer === item.example;
+  item.checked = { correct };
+  if (correct) state.sbState.score++;
+  logEvent('game', correct, 'builder');
+  render();
+}
+
+function renderBuilder(){
+  const wrap = document.createElement('div');
+  const sb = state.sbState;
+  if (!sb) return wrap;
+
+  if (sb.index >= sb.items.length){
+    const done = document.createElement('div');
+    done.className = 'done-msg';
+    done.textContent = `Правильно: ${sb.score} з ${sb.items.length} 🎉`;
+    wrap.appendChild(done);
+    const again = document.createElement('button');
+    again.className = 'primary-btn';
+    again.textContent = 'Зіграти ще раз';
+    again.onclick = () => startBuilder();
+    wrap.appendChild(again);
+    return wrap;
+  }
+
+  const item = sb.items[sb.index];
+  const progress = document.createElement('div');
+  progress.className = 'progress-line';
+  progress.textContent = `${sb.index + 1} / ${sb.items.length}`;
+  wrap.appendChild(progress);
+
+  const box = document.createElement('div');
+  box.className = 'prompt-box';
+  box.style.margin = '0 0 14px';
+  box.innerHTML = `<div style="color:var(--slate);font-size:13px;margin-bottom:6px;">Склади речення зі словом</div><div class="ukr">${escapeHtml(item.word)} — ${escapeHtml(item.translation)}</div>`;
+  wrap.appendChild(box);
+
+  const line = document.createElement('div');
+  line.className = 'sb-line';
+  item.line.forEach(id => {
+    const tok = document.createElement('button');
+    tok.className = 'sb-tok in-line';
+    tok.textContent = item.tokens[id].text;
+    tok.disabled = !!item.checked;
+    tok.onclick = () => { item.line = item.line.filter(x => x !== id); render(); };
+    line.appendChild(tok);
+  });
+  wrap.appendChild(line);
+
+  const bank = document.createElement('div');
+  bank.className = 'sb-bank';
+  item.bank.filter(t => !item.line.includes(t.id)).forEach(t => {
+    const tok = document.createElement('button');
+    tok.className = 'sb-tok';
+    tok.textContent = t.text;
+    tok.disabled = !!item.checked;
+    tok.onclick = () => { item.line.push(t.id); render(); };
+    bank.appendChild(tok);
+  });
+  wrap.appendChild(bank);
+
+  if (!item.checked){
+    const check = document.createElement('button');
+    check.className = 'primary-btn';
+    check.textContent = 'Перевірити';
+    check.disabled = item.line.length !== item.tokens.length;
+    check.onclick = sbCheck;
+    wrap.appendChild(check);
+    if (item.line.length){
+      const reset = document.createElement('button');
+      reset.className = 'secondary-btn';
+      reset.textContent = 'Почати спочатку';
+      reset.onclick = () => { item.line = []; render(); };
+      wrap.appendChild(reset);
+    }
+  } else {
+    const fb = document.createElement('div');
+    fb.className = 'feedback-box ' + (item.checked.correct ? 'correct' : 'incorrect');
+    fb.textContent = item.checked.correct ? 'Правильно!' : `Правильне речення: ${item.example}`;
+    wrap.appendChild(fb);
+
+    const row = document.createElement('div');
+    row.style.display = 'flex';
+    row.style.gap = '10px';
+    const speak = document.createElement('button');
+    speak.className = 'secondary-btn';
+    speak.textContent = '🔊';
+    speak.style.width = '64px';
+    speak.onclick = () => speakText(item.example);
+    const next = document.createElement('button');
+    next.className = 'primary-btn';
+    next.style.marginTop = '10px';
+    next.textContent = sb.index === sb.items.length - 1 ? 'Результат' : 'Далі';
+    next.onclick = () => { sb.index++; render(); };
+    row.appendChild(speak);
+    row.appendChild(next);
+    wrap.appendChild(row);
+  }
+  return wrap;
+}
+
+// ---------- Speed Match ----------
+let smTimerId = null;
+const SM_DURATION = 60;
+
+async function startSpeed(){
+  const all = state.packs.flatMap(p => p.words);
+  const pool = gamePool();
+  if (all.length < 4 || !pool.length){
+    state.gameSetupError = 'Потрібно щонайменше 4 слова в пакетах, щоб було з чого обирати варіанти.';
+    render();
+    return;
+  }
+  const best = (await storeGet('speedBest')) || 0;
+  state.smState = {
+    pool: gameShuffle(pool), poolIdx: 0, score: 0, streak: 0, correct: 0, total: 0,
+    timeLeft: SM_DURATION, over: false, current: null, flash: null, best, newBest: false,
+  };
+  smNextQuestion();
+  const endAt = Date.now() + SM_DURATION * 1000;
+  if (smTimerId) clearInterval(smTimerId);
+  smTimerId = setInterval(() => {
+    const sm = state.smState;
+    if (!sm || state.route !== 'speed-play' || sm.over){
+      clearInterval(smTimerId);
+      smTimerId = null;
+      return;
+    }
+    sm.timeLeft = Math.max(0, Math.ceil((endAt - Date.now()) / 1000));
+    const el = document.getElementById('sm-timer');
+    if (el){
+      el.textContent = '⏱ ' + sm.timeLeft;
+      el.classList.toggle('low', sm.timeLeft <= 10);
+    }
+    if (sm.timeLeft <= 0) smFinish();
+  }, 250);
+  goto('speed-play');
+}
+
+function smNextQuestion(){
+  const sm = state.smState;
+  if (sm.poolIdx >= sm.pool.length){
+    sm.pool = gameShuffle(sm.pool);
+    sm.poolIdx = 0;
+  }
+  const word = sm.pool[sm.poolIdx++];
+  const seen = new Set([word.translation]);
+  const distractors = [];
+  for (const w of gameShuffle(state.packs.flatMap(p => p.words))){
+    if (seen.has(w.translation)) continue;
+    seen.add(w.translation);
+    distractors.push(w.translation);
+    if (distractors.length === 3) break;
+  }
+  sm.current = { word, options: gameShuffle([...distractors, word.translation]) };
+}
+
+async function smFinish(){
+  const sm = state.smState;
+  if (!sm || sm.over) return;
+  sm.over = true;
+  if (smTimerId){ clearInterval(smTimerId); smTimerId = null; }
+  if (sm.score > sm.best){
+    sm.newBest = true;
+    sm.best = sm.score;
+    await storeSet('speedBest', sm.score);
+  }
+  render();
+}
+
+function smAnswer(option){
+  const sm = state.smState;
+  if (!sm || sm.over) return;
+  const word = sm.current.word;
+  const ok = option === word.translation;
+  sm.total++;
+  if (ok){
+    sm.correct++;
+    const gain = 10 + Math.min(sm.streak, 5) * 2;
+    sm.score += gain;
+    sm.streak++;
+    sm.flash = { ok:true, text:`+${gain}` };
+  } else {
+    sm.streak = 0;
+    sm.flash = { ok:false, text:`${word.word} = ${word.translation}` };
+  }
+  logEvent('game', ok, 'speed');
+  smNextQuestion();
+  render();
+}
+
+function renderSpeed(){
+  const wrap = document.createElement('div');
+  const sm = state.smState;
+  if (!sm) return wrap;
+
+  if (sm.over){
+    const done = document.createElement('div');
+    done.className = 'done-msg';
+    const acc = sm.total ? Math.round(sm.correct / sm.total * 100) : 0;
+    done.innerHTML = `Час вийшов!<br><strong style="font-size:28px;font-family:'IBM Plex Serif',serif;">${sm.score}</strong> очок<br>Правильно ${sm.correct} з ${sm.total} (${acc}%)<br>${sm.newBest ? 'Новий рекорд! 🏆' : 'Рекорд: ' + sm.best}`;
+    wrap.appendChild(done);
+    const again = document.createElement('button');
+    again.className = 'primary-btn';
+    again.textContent = 'Ще раз';
+    again.onclick = () => startSpeed();
+    wrap.appendChild(again);
+    return wrap;
+  }
+
+  const hud = document.createElement('div');
+  hud.className = 'sm-hud';
+  const score = document.createElement('span');
+  score.textContent = `${sm.score}${sm.streak >= 3 ? '  🔥×' + sm.streak : ''}`;
+  const timer = document.createElement('span');
+  timer.id = 'sm-timer';
+  timer.className = 'sm-timer' + (sm.timeLeft <= 10 ? ' low' : '');
+  timer.textContent = '⏱ ' + sm.timeLeft;
+  hud.appendChild(score);
+  hud.appendChild(timer);
+  wrap.appendChild(hud);
+
+  const box = document.createElement('div');
+  box.className = 'prompt-box';
+  box.innerHTML = `<div class="ukr" style="text-align:center;font-size:24px;">${escapeHtml(sm.current.word.word)}</div>`;
+  wrap.appendChild(box);
+
+  sm.current.options.forEach(opt => {
+    const btn = document.createElement('button');
+    btn.className = 'option-btn';
+    btn.textContent = opt;
+    btn.onclick = () => smAnswer(opt);
+    wrap.appendChild(btn);
+  });
+
+  if (sm.flash){
+    const fl = document.createElement('div');
+    fl.className = 'progress-line';
+    fl.style.color = sm.flash.ok ? 'var(--sage)' : 'var(--rust)';
+    fl.textContent = sm.flash.ok ? sm.flash.text : '✗ ' + sm.flash.text;
+    wrap.appendChild(fl);
+  }
+  return wrap;
+}
+
 // ---------- Bottom nav ----------
 function renderBottomNav(){
   const nav = document.createElement('div');
@@ -2476,6 +3376,7 @@ function renderBottomNav(){
   const items = [
     { key:'home', icon:'🗂', label:'Практика' },
     { key:'add', icon:'✏️', label:'Слова' },
+    { key:'games', icon:'🎮', label:'Ігри' },
     { key:'chat', icon:'💬', label:'Питання' },
     { key:'reference', icon:'📚', label:'Довідник' },
     { key:'progress', icon:'📈', label:'Прогрес' },
